@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { cn } from 'cn';
 import type { LucideIcon } from 'lucide-react';
@@ -49,8 +50,7 @@ export const IconButton = memo(function IconButton({
       title={title}
     >
       {loading ? (
-        // <Spinner data-icon="inline-start" />
-        <span>loading</span>
+          <Spinner/>
       ) : (
         <>
           {Icon && (Array.isArray(Icon) ? (
