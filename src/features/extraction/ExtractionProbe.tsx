@@ -48,7 +48,7 @@ export const ExtractionProbe = ({
 
   return (
     <motion.div
-      className="w-5 h-5 rounded-sm"
+      className="w-2 h-2"
       style={{ backgroundColor: "#fff" }}
       animate={color ? { scale: [1, 1.08, 1] } : {}}
       transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}

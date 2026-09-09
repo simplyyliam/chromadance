@@ -11,13 +11,22 @@ type ProbeGridProps = {
 };
 
 export const ProbeGrid = ({ canvasRef, imageVersion, containerWidth, containerHeight }: ProbeGridProps) => {
-  const gridCols = useExtractionStore((s) => s.gridCols)
-  const gridRows = useExtractionStore((s) => s.gridRows)
+  const targetProbeSize = useExtractionStore((s) => s.probeSize)
   const extractedColors = useExtractionStore((s) => s.extractedColors)
   const setPhaseAction = useExtractionStore((s) => s.setPhase)
 
-  const probeWidth = containerWidth / gridCols
-  const probeHeight = containerHeight / gridRows
+  const gap = 4; // 4px gap between probes
+
+  // Figure out how many probes fit edge-to-edge at roughly the target size,
+  // then stretch each probe slightly so the grid fills the container exactly
+  // with no leftover margin on the right/bottom edges.
+  const gridCols = Math.max(1, Math.round((containerWidth + gap) / (targetProbeSize + gap)));
+  const gridRows = Math.max(1, Math.round((containerHeight + gap) / (targetProbeSize + gap)));
+
+  const totalGapWidth = (gridCols - 1) * gap;
+  const totalGapHeight = (gridRows - 1) * gap;
+  const probeWidth = (containerWidth - totalGapWidth) / gridCols;
+  const probeHeight = (containerHeight - totalGapHeight) / gridRows;
 
   const probes = useMemo(() => {
     return Array.from({ length: gridCols * gridRows }, (_, i) => {
@@ -25,11 +34,11 @@ export const ProbeGrid = ({ canvasRef, imageVersion, containerWidth, containerHe
       const row = Math.floor(i / gridCols);
       return {
         id: `probe-${col}-${row}`,
-        x: col * probeWidth,
-        y: row * probeHeight,
+        x: col * (probeWidth + gap),
+        y: row * (probeHeight + gap),
       };
     });
-  }, [gridCols, gridRows, probeWidth, probeHeight]);
+  }, [gridCols, gridRows, probeWidth, probeHeight, gap]);
 
   useEffect(() => {
     if (extractedColors.length === probes.length && probes.length > 0) {
@@ -39,14 +48,14 @@ export const ProbeGrid = ({ canvasRef, imageVersion, containerWidth, containerHe
   }, [extractedColors.length, probes.length, setPhaseAction]);
 
   return (
-    <>
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
       {probes.map((probe, i) => (
         <motion.div
           key={probe.id}
           initial={{ opacity: 0, scale: 0.3 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{
-            delay: i * 0.02,       // domino stagger
+            delay: i * 0.02,
             duration: 0.3,
             type: 'spring',
             stiffness: 300,
@@ -72,6 +81,6 @@ export const ProbeGrid = ({ canvasRef, imageVersion, containerWidth, containerHe
           />
         </motion.div>
       ))}
-    </>
+    </div>
   )
 }
