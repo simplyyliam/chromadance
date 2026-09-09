@@ -216,6 +216,14 @@ export const useExtractionStore = create<ExtractionStore>()(
         return (state) => {
           if (state) {
             state.isHydrated = true;
+            // Reset phase on page refresh, keep the image
+            if (state.phase !== 'idle') {
+              state.phase = 'idle';
+              state.countdown = 0;
+              state.extractedColors = [];
+              state.clusters = [];
+              state.palette = [];
+            }
           }
         };
       },

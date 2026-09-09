@@ -24,8 +24,10 @@ export default function ImageContainer() {
   const toggleImageExpanded = useExtractionStore((s) => s.toggleImageExpanded);
   const [isDragging, setIsDragging] = useState(false);
   const [imageVersion, setImageVersion] = useState(0)
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
@@ -50,6 +52,25 @@ export default function ImageContainer() {
       setImageVersion(v => v + 1);
     }
   }, [image]);
+
+  // Measure the displayed container, not the native image dimensions
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    setContainerSize({ width: rect.width, height: rect.height });
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setContainerSize({ width, height });
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -113,7 +134,6 @@ export default function ImageContainer() {
     setTimeout(() => setImageVersion(v => v + 1), 100);
   };
 
-
   const handleClick = () => {
     fileInputRef.current?.click();
   };
@@ -121,6 +141,7 @@ export default function ImageContainer() {
   return (
     <>
       <motion.div
+        ref={containerRef}
         animate={phase === 'complete' && !isImageExpanded ? { y: 40, scale: 0.95 } : { y: 0, scale: 1 }}
         transition={{ duration: 0.6, ease: 'easeInOut' }}
         onClick={() => phase === 'complete' && toggleImageExpanded()}
@@ -143,14 +164,12 @@ export default function ImageContainer() {
 
         {phase === 'countdown' && <Countdown />}
 
-
-
         {(phase === 'extracting' || phase === 'clustering') && (
           <ProbeGrid
             canvasRef={canvasRef}
             imageVersion={imageVersion}
-            containerWidth={canvasRef.current?.width ?? 0}
-            containerHeight={canvasRef.current?.height ?? 0}
+            containerWidth={containerSize.width}
+            containerHeight={containerSize.height}
           />
         )}
 
@@ -165,7 +184,6 @@ export default function ImageContainer() {
         )}
 
         {!isHydrated ? (
-          // <Skeleton className="w-full h-full" />
           <Spinner className='text-white' />
         ) : image ? (
           <img
