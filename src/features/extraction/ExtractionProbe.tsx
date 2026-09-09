@@ -2,12 +2,12 @@ import { motion } from "motion/react";
 
 type ExtractionProbeProps = {
   color?: string;
+  isLeaving: boolean;
 };
 
-export const ExtractionProbe = ({ color }: ExtractionProbeProps) => (
+export const ExtractionProbe = ({ color, isLeaving }: ExtractionProbeProps) => (
   <motion.div
-    className="h-4 w-4"
-    style={{ backgroundColor: color ?? "#ffffff50" }}
+    className="h-1.5 w-1.5 "
+    style={{ backgroundColor: isLeaving ? "#ffffff" : color ?? "#ffffff" }}
   />
 );
-

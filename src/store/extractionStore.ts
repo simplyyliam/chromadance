@@ -88,6 +88,7 @@ export type ExtractionStore = {
   setClustering: (clustering: boolean) => void;
   setPaletteGenerating: (generating: boolean) => void;
   toggleImageExpanded: () => void;
+  setExiting: (exiting: boolean) => void;
 };
 
 export const useExtractionStore = create<ExtractionStore>()(
@@ -119,6 +120,7 @@ export const useExtractionStore = create<ExtractionStore>()(
       isClustering: false,
       isPaletteGenerating: false,
       isImageExpanded: false,
+      isExiting: false,
 
       // Actions - Core
       setImage: (image) => set({ image, phase: image ? 'idle' : 'idle' }),
