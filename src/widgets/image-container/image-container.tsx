@@ -10,15 +10,18 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
-import { ExtractionProbe } from '@/features/extraction';
+import { Countdown, ProbeGrid } from '@/features/extraction';
 import { useExtractionStore } from '@/store/extractionStore';
+import { motion } from 'motion/react';
 
 export default function ImageContainer() {
   const image = useExtractionStore((s) => s.image);
   const setImage = useExtractionStore((s) => s.setImage);
   const isHydrated = useExtractionStore((s) => s.isHydrated);
+  const phase = useExtractionStore((s) => s.phase);
+  const isImageExpanded = useExtractionStore((s) => s.isImageExpanded);
+  const toggleImageExpanded = useExtractionStore((s) => s.toggleImageExpanded);
   const [isDragging, setIsDragging] = useState(false);
   const [imageVersion, setImageVersion] = useState(0)
 
@@ -97,15 +100,15 @@ export default function ImageContainer() {
     const img = imageRef.current;
     const canvas = canvasRef.current;
     if (!img || !canvas) return;
-  
+
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
-  
+
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-  
+
     ctx.drawImage(img, 0, 0);
-  
+
     setImageVersion(v => v + 1);
     setTimeout(() => setImageVersion(v => v + 1), 100);
   };
@@ -117,7 +120,10 @@ export default function ImageContainer() {
 
   return (
     <>
-      <div
+      <motion.div
+        animate={phase === 'complete' && !isImageExpanded ? { y: 40, scale: 0.95 } : { y: 0, scale: 1 }}
+        transition={{ duration: 0.6, ease: 'easeInOut' }}
+        onClick={() => phase === 'complete' && toggleImageExpanded()}
         className={`relative flex items-center justify-center w-[55svw] h-[60svh] bg-klein overflow-hidden transition-colors shadow-2xl ${isDragging ? 'ring-2 ring-primary ring-inset' : ''
           }`}
         onDragEnter={handleDragEnter}
@@ -125,48 +131,70 @@ export default function ImageContainer() {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileSelect}
-        className="hidden"
-      />
-
-      <canvas ref={canvasRef} className="hidden" />
-      <ExtractionProbe x={0} y={0} size={10} canvasRef={canvasRef} imageVersion={imageVersion}/>
-
-      {!isHydrated ? (
-        // <Skeleton className="w-full h-full" />
-        <Spinner className='text-white'/>
-      ) : image ? (
-        <img
-          ref={imageRef}
-          src={image}
-          alt="Uploaded content"
-          onLoad={handleImageLoad}
-          className="w-full h-full object-cover"
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileSelect}
+          className="hidden"
         />
-      ) : (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <HugeiconsIcon icon={Image01Icon} className='size-7' />
-            </EmptyMedia>
-            <EmptyTitle className='text-white'>No image selected</EmptyTitle>
-            <EmptyDescription className='text-white'>Drag & drop an image here</EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button onClick={handleClick}>Browse files</Button>
-          </EmptyContent>
-        </Empty>
+
+        <canvas ref={canvasRef} className="hidden" />
+
+        {phase === 'countdown' && <Countdown />}
+
+
+
+        {(phase === 'extracting' || phase === 'clustering') && (
+          <ProbeGrid
+            canvasRef={canvasRef}
+            imageVersion={imageVersion}
+            containerWidth={canvasRef.current?.width ?? 0}
+            containerHeight={canvasRef.current?.height ?? 0}
+          />
+        )}
+
+        {phase === 'extracting' && (
+          <motion.div
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm uppercase tracking-widest"
+            animate={{ opacity: [0.3, 1, 0.3] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            Extracting
+          </motion.div>
+        )}
+
+        {!isHydrated ? (
+          // <Skeleton className="w-full h-full" />
+          <Spinner className='text-white' />
+        ) : image ? (
+          <img
+            ref={imageRef}
+            src={image}
+            alt="Uploaded content"
+            onLoad={handleImageLoad}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <HugeiconsIcon icon={Image01Icon} className='size-7' />
+              </EmptyMedia>
+              <EmptyTitle className='text-white'>No image selected</EmptyTitle>
+              <EmptyDescription className='text-white'>Drag & drop an image here</EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button onClick={handleClick}>Browse files</Button>
+            </EmptyContent>
+          </Empty>
+        )}
+      </motion.div>
+      {!isHydrated && (
+        <div className="flex items-center justify-center mt-4">
+          <Spinner className="size-6 text-white" />
+        </div>
       )}
-    </div>
-    {!isHydrated && (
-      <div className="flex items-center justify-center mt-4">
-        <Spinner className="size-6 text-white" />
-      </div>
-    )}
     </>
   );
 }

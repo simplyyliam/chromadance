@@ -11,11 +11,11 @@ export const Unit8ToRGB = (data: Uint8ClampedArray) => {
 
   const pixels = data.length / 4
 
-  const color = `rgb(
-    ${Math.round(r / pixels)}
-    ${Math.round(g / pixels)}
-    ${Math.round(b / pixels)}
-    )`
+  const rVal = Math.round(r / pixels);
+  const gVal = Math.round(g / pixels);
+  const bVal = Math.round(b / pixels);
 
-  return {color}
+  const color = `rgb(${rVal} ${gVal} ${bVal})`;
+
+  return { r: rVal, g: gVal, b: bVal, color };
 }

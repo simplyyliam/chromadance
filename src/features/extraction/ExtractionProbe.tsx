@@ -1,50 +1,57 @@
 import { extractColor } from "@/lib/extractColor";
 import { Unit8ToRGB } from "@/lib/Unit8toRGB";
+import { useExtractionStore } from "@/store/extractionStore";
+import { motion } from "motion/react";
 import { useEffect, useState, type RefObject } from "react";
 
 type ExtractionProbeProps = {
+  id: string;
   x: number;
   y: number;
-  size: number;
-  color?: string;
+  width: number;
+  height: number;
   canvasRef: RefObject<HTMLCanvasElement | null>;
-  imageVersion?: number
+  imageVersion?: number;
+  entryDelay?: number;
 };
 
 export const ExtractionProbe = ({
-  x,
-  y,
-  size,
-  canvasRef,
-  imageVersion = 0
+  id, x, y, width, height, canvasRef, imageVersion = 0, entryDelay = 0,
 }: ExtractionProbeProps) => {
 
   const [color, setColor] = useState<string>();
+  const addExtractedColor = useExtractionStore((s) => s.addExtractedColor)
 
   useEffect(() => {
-    const imageData = extractColor(x, y, size, canvasRef);
+    // Wait for the entry animation to roughly finish before sampling —
+    // this is what makes extraction feel sequential/dramatic rather than instant.
+    const timeout = setTimeout(() => {
+      const size = Math.round(Math.min(width, height));
+      const imageData = extractColor(Math.round(x), Math.round(y), size, canvasRef);
+      if (!imageData) return;
 
-    if (!imageData) {
-      setColor(undefined);
-      return;
-    }
+      const rgbResult = Unit8ToRGB(imageData);
+      setColor(rgbResult.color);
 
-    setColor(Unit8ToRGB(imageData).color);
-  }, [x, y, size, canvasRef, imageVersion]);
+      addExtractedColor({
+        id, x, y, width, height,
+        rgb: { r: rgbResult.r, g: rgbResult.g, b: rgbResult.b },
+      });
+    }, entryDelay * 1000 + 300); // small extra delay after entry
+
+    return () => clearTimeout(timeout);
+  }, [x, y, width, height, canvasRef, imageVersion]);
+
 
   if (!color) return null;
   console.log("Data:", color)
-  
+
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: x,
-        top: y,
-        width: size,
-        height: size,
-        backgroundColor: color,
-      }}
+    <motion.div
+      className="w-5 h-5 rounded-sm"
+      style={{ backgroundColor: "#fff" }}
+      animate={color ? { scale: [1, 1.08, 1] } : {}}
+      transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
     />
   );
 };
