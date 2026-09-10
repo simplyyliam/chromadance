@@ -7,7 +7,7 @@ export type ExtractionPhase =
   | 'idle'           // No image or waiting to start
   | 'countdown'      // Dramatic countdown before extraction
   | 'extracting'     // Probes are sampling colors
-  | 'clustering'     // Colors competing (Battle Royal)
+  | 'contenders'     // KOTC: All colors enter the arena
   | 'palette'        // Generating final palette
   | 'complete';      // Palette ready
 
@@ -54,7 +54,7 @@ export type ExtractionStore = {
   areProbesVisible: boolean;
   isShaderEnabled: boolean;
   isExtracting: boolean;
-  isClustering: boolean;
+  isContending: boolean;
   isPaletteGenerating: boolean;
   isImageExpanded: boolean;   // For the click-to-expand animation
   isExiting: boolean;
@@ -90,7 +90,7 @@ export type ExtractionStore = {
   setShaderEnabled: (enabled: boolean) => void;
   toggleShaderEnabled: () => void;
   setExtracting: (extracting: boolean) => void;
-  setClustering: (clustering: boolean) => void;
+  setContending: (contending: boolean) => void;
   setPaletteGenerating: (generating: boolean) => void;
   toggleImageExpanded: () => void;
   setExiting: (exiting: boolean) => void;
@@ -123,7 +123,7 @@ export const useExtractionStore = create<ExtractionStore>()(
       areProbesVisible: false,
       isShaderEnabled: true,
       isExtracting: false,
-      isClustering: false,
+      isContending: false,
       isPaletteGenerating: false,
       isImageExpanded: false,
       isExiting: false,
@@ -141,7 +141,7 @@ export const useExtractionStore = create<ExtractionStore>()(
         clusters: [],
         palette: [],
         isExtracting: false,
-        isClustering: false,
+        isContending: false,
         isPaletteGenerating: false,
         isImageExpanded: false,
       }),
@@ -215,7 +215,7 @@ export const useExtractionStore = create<ExtractionStore>()(
 
       setExtracting: (extracting) => set({ isExtracting: extracting }),
 
-      setClustering: (clustering) => set({ isClustering: clustering }),
+      setContending: (contending) => set({ isContending: contending }),
 
       setPaletteGenerating: (generating) => set({ isPaletteGenerating: generating }),
 

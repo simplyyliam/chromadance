@@ -7,7 +7,7 @@ import { motion } from "motion/react";
 export default function Home() {
   const phase = useExtractionStore((s) => s.phase);
   const isImageExpanded = useExtractionStore((s) => s.isImageExpanded);
-  const shouldCollapse = phase === 'clustering' && !isImageExpanded;
+  const shouldCollapse = phase === 'contenders' && !isImageExpanded;
 
   return (
     <div className="flex items-center justify-center w-full h-screen">
@@ -65,7 +65,7 @@ export default function Home() {
         }}
         className="absolute inset-0 flex items-center justify-center"
       >
-        {phase === 'clustering' && <SeedSelection/> }
+        {phase === 'contenders' && <SeedSelection/> }
       </motion.div>
     </div>
   )

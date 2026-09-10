@@ -51,7 +51,7 @@ export const useExtractionTimeline = () => {
 
       if (frame.done) {
         rafRef.current = 0;
-        setPhase("clustering");
+        setPhase("contenders");
         return;
       }
 
