@@ -84,3 +84,23 @@ export const easeOutBack = (t: number): number => {
 };
 
 export const TAU = Math.PI * 2;
+
+export const hyperdriveEnvelope = (elapsed: number) => {
+  const t = clamp01(elapsed / TOTAL_SECONDS);
+  const PUNCH = 0.22;
+  const HOLD = 0.75;
+  let expansion: number;
+  if (t < PUNCH) {
+    expansion = easeOutCubic(t / PUNCH);
+  } else if (t < HOLD) {
+    expansion = 1;
+  } else {
+    expansion = 1 - easeInCubic((t - HOLD) / (1 - HOLD));
+  }
+  let ripple = 0;
+  if (t >= HOLD) {
+    const k = (t - HOLD) / (1 - HOLD);
+    ripple = Math.sin(k * TAU * 2.0) * Math.exp(-k * 4.0);
+  }
+  return { expansion, ripple };
+};

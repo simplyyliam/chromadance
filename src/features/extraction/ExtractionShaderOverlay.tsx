@@ -46,7 +46,7 @@ const float TAU   = 6.28318530718;
 
 // Raise above 0.0 to let the ripple actually refract the artwork. Kept at 0.0
 // so the image is never warped or stretched - only the light on top of it is.
-const float IMAGE_REFRACTION = 0.0;
+const float IMAGE_REFRACTION = 0.01;
 
 float hash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -91,18 +91,60 @@ void main() {
   // ---- caustic banding riding the ripple ----
   float bands = pow(0.5 + 0.5 * height, 4.0);
 
+  // ---- stone-drop ripple: fires once, only while leaving --------------------
+
+  // Age of the drop in seconds; only ticks during the leaving stage.
+  float dropAge = u_stage == 2 ? u_stageTime : -1.0;
+
+  float dropDisplace = 0.0; // radial push, in UV units — the water actually moving
+  float dropHighlight = 0.0; // bright crest catching light
+
+  if (dropAge >= 0.0) {
+    // The wavefront's leading edge travels outward at a constant speed.
+    float waveSpeed = 1.35;
+    float waveR = dropAge * waveSpeed;
+
+    // Distance behind the leading edge; negative ahead of it, positive behind.
+    float behind = waveR - nd;
+
+    // Only the water behind the leading edge is disturbed (ahead is still calm).
+    float disturbed = smoothstep(0.0, 0.05, behind);
+
+    // Oscillation: several rings trailing the leading edge, like real ripples.
+    float ringWave = sin(behind * 26.0 - dropAge * 2.0);
+
+    // Amplitude dies out both with distance-behind-the-front and with time,
+    // so the ripple is a short trailing wake, not an endless pattern.
+    float decay = exp(-behind * 3.0) * exp(-dropAge * 1.1);
+
+    dropDisplace = ringWave * decay * disturbed;
+
+    // A sharper, positive-only version for the light highlight (crests only).
+    dropHighlight = max(ringWave, 0.0) * decay * disturbed;
+  }
+
   float grain = (hash(uv * u_resolution + u_time * 60.0) - 0.5) * 0.04;
 
   // Optional, disabled by default.
   vec2 refracted = imageUV + dir * (height * IMAGE_REFRACTION * intensity);
-  vec3 base = IMAGE_REFRACTION > 0.0 ? texture(u_image, refracted).rgb : pristine;
+
+  // Add the stone-drop displacement on top — this is what makes the water
+  // actually move, not just glow. Small multiplier keeps it looking like
+  // real water disturbance rather than a lens warp.
+  refracted += dir * dropDisplace * 0.018;
+
+  vec3 base = (IMAGE_REFRACTION > 0.0 || dropDisplace != 0.0)
+      ? texture(u_image, refracted).rgb
+      : pristine;
 
   // ---- additive light, screen-blended so the artwork stays readable ----
   vec3 light = vec3(0.0);
   light += NEUTRAL * core * 0.60;
-  light += vec3(0.55, 0.72, 1.00) * front * front * 0.55;
+  light += vec3(1.00, 1.00, 1.00) * front * front * 0.55;
   light += NEUTRAL * bands * 0.26;
   light += vec3(clamp(slope * 0.02, 0.0, 1.0)) * 0.16 * (0.25 + 0.75 * front);
+  // The stone-drop crests catching light, bright and neutral.
+  light += vec3(1.0) * dropHighlight * 0.9;
 
   vec3 tinted = mix(base, NEUTRAL, 0.16 * intensity);
   vec3 lit    = 1.0 - (1.0 - tinted) * (1.0 - clamp(light * intensity, 0.0, 1.0));
@@ -112,6 +154,8 @@ void main() {
   fragColor = vec4(mix(pristine, lit, intensity), 1.0);
 }
 `;
+
+
 
 export const ExtractionShaderOverlay = ({
   imageRef,
