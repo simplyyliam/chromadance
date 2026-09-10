@@ -11,7 +11,12 @@ import {
 } from "@/components/ui/empty"
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Countdown, ProbeGrid } from '@/features/extraction';
+import {
+  Countdown,
+  ExtractionShaderOverlay,
+  ProbeGrid,
+  useExtractionTimeline,
+} from '@/features/extraction';
 import { useExtractionStore } from '@/store/extractionStore';
 import { motion } from 'motion/react';
 
@@ -22,6 +27,11 @@ export default function ImageContainer() {
   const phase = useExtractionStore((s) => s.phase); 
   const isImageExpanded = useExtractionStore((s) => s.isImageExpanded);
   const toggleImageExpanded = useExtractionStore((s) => s.toggleImageExpanded);
+  const showShader = useExtractionStore((s) => s.showShader);
+  const showProbes = useExtractionStore((s) => s.showProbes);
+
+  // Single clock for the whole run; both visual layers read from it.
+  const { stage, startAtRef } = useExtractionTimeline();
   const [isDragging, setIsDragging] = useState(false);
   const [imageVersion, setImageVersion] = useState(0)
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -164,9 +174,24 @@ export default function ImageContainer() {
 
         {phase === 'countdown' && <Countdown />}
 
-        {(phase === 'extracting' || phase === 'clustering') && (
+        {/* The shader paints the artwork plus its light field, so it sits
+            underneath the probe layer. */}
+        {showShader && image && (
+          <ExtractionShaderOverlay
+            imageRef={imageRef}
+            imageVersion={imageVersion}
+            startAtRef={startAtRef}
+            stage={stage}
+            width={containerSize.width}
+            height={containerSize.height}
+          />
+        )}
+
+        {showProbes && image && (
           <ProbeGrid
             canvasRef={canvasRef}
+            startAtRef={startAtRef}
+            stage={stage}
             imageVersion={imageVersion}
             containerWidth={containerSize.width}
             containerHeight={containerSize.height}

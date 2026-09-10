@@ -56,6 +56,11 @@ export type ExtractionStore = {
   isClustering: boolean;
   isPaletteGenerating: boolean;
   isImageExpanded: boolean;   // For the click-to-expand animation
+  isExiting: boolean;
+
+  // Visual layers - users can pick either look, or both
+  showShader: boolean;        // WebGL light/ripple overlay
+  showProbes: boolean;        // Animated probe grid
 
   // Actions - Core
   setImage: (image: string | null) => void;
@@ -89,6 +94,12 @@ export type ExtractionStore = {
   setPaletteGenerating: (generating: boolean) => void;
   toggleImageExpanded: () => void;
   setExiting: (exiting: boolean) => void;
+
+  // Actions - Visual layers
+  toggleShader: () => void;
+  toggleProbes: () => void;
+  setShowShader: (visible: boolean) => void;
+  setShowProbes: (visible: boolean) => void;
 };
 
 export const useExtractionStore = create<ExtractionStore>()(
@@ -121,6 +132,10 @@ export const useExtractionStore = create<ExtractionStore>()(
       isPaletteGenerating: false,
       isImageExpanded: false,
       isExiting: false,
+
+      // Visual layers
+      showShader: true,
+      showProbes: true,
 
       // Actions - Core
       setImage: (image) => set({ image, phase: image ? 'idle' : 'idle' }),
@@ -205,6 +220,15 @@ export const useExtractionStore = create<ExtractionStore>()(
       toggleImageExpanded: () => set((state) => ({ isImageExpanded: !state.isImageExpanded })),
 
       setExiting: (exiting) => set({ isExiting: exiting }),
+
+      // Actions - Visual layers
+      toggleShader: () => set((state) => ({ showShader: !state.showShader })),
+
+      toggleProbes: () => set((state) => ({ showProbes: !state.showProbes })),
+
+      setShowShader: (visible) => set({ showShader: visible }),
+
+      setShowProbes: (visible) => set({ showProbes: visible }),
     }),
     {
       name: 'extraction-store',
@@ -215,6 +239,8 @@ export const useExtractionStore = create<ExtractionStore>()(
         extractedColors: state.extractedColors,
         clusters: state.clusters,
         palette: state.palette,
+        showShader: state.showShader,
+        showProbes: state.showProbes,
       }),
       onRehydrateStorage: () => {
         return (state) => {
