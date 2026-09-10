@@ -15,18 +15,23 @@ import { Countdown, ExtractionShaderOverlay, ProbeGrid, useExtractionTimeline } 
 import { useExtractionStore } from '@/store/extractionStore';
 import { motion } from 'motion/react';
 
-export default function ImageContainer() {
+type ImageContainerProps = {
+  shouldCollapse: boolean;
+};
+
+
+
+export default function ImageContainer({ shouldCollapse }: ImageContainerProps) {
   const image = useExtractionStore((s) => s.image);
   const setImage = useExtractionStore((s) => s.setImage);
   const isHydrated = useExtractionStore((s) => s.isHydrated);
   const phase = useExtractionStore((s) => s.phase);
   const isShaderEnabled = useExtractionStore((s) => s.isShaderEnabled);
-  const isImageExpanded = useExtractionStore((s) => s.isImageExpanded);
   const toggleImageExpanded = useExtractionStore((s) => s.toggleImageExpanded);
   const areProbesVisible = useExtractionStore((s) => s.areProbesVisible);
 
   const { stage, startAtRef } = useExtractionTimeline();
-  
+  const [isAnimating, setIsAnimating] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [imageVersion, setImageVersion] = useState(0);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -139,10 +144,30 @@ export default function ImageContainer() {
     <>
       <motion.div
         ref={containerRef}
-        animate={phase === 'complete' && !isImageExpanded ? { y: 40, scale: 0.95 } : { y: 0, scale: 1 }}
-        transition={{ duration: 0.6, ease: 'easeInOut' }}
-        onClick={() => phase === 'complete' && toggleImageExpanded()}
-        className={`relative flex h-[60svh] w-[55svw] items-center justify-center overflow-hidden bg-klein shadow-2xl transition-colors ${isDragging ? 'ring-2 ring-inset ring-primary' : ''}`}
+        animate={
+          shouldCollapse
+            ? { y: 620, scale: 0.95 }
+            : { y: 0, scale: 1 }
+        }
+        whileHover={
+          shouldCollapse && !isAnimating
+            ? { y: 590, scale: 0.95 }
+            : undefined
+        }
+        transition={{
+          type: 'spring',
+          stiffness: 140,
+          damping: 18,
+          mass: 0.5,
+        }}
+        whileTap={
+          shouldCollapse && !isAnimating
+            ? { y: 585, scale: 0.945 }
+            : undefined
+        }
+        onAnimationComplete={() => setIsAnimating(false)}
+        onClick={() => phase === 'clustering' && toggleImageExpanded()}
+        className={`relative z-40 flex h-[60svh] w-[55svw] items-center justify-center overflow-hidden bg-klein shadow-2xl transition-colors ${isDragging ? 'ring-2 ring-inset ring-primary' : ''}`}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}

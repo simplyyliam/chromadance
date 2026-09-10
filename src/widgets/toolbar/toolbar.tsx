@@ -17,7 +17,7 @@ export default function Toolbar() {
       animate={{ opacity: phase === "complete" ? 0 : 1 }}
       transition={{ duration: 0.5 }}
       style={{ pointerEvents: phase === "complete" ? "none" : "auto" }}
-      className="absolute bottom-5 flex items-center justify-center gap-1.5 pointer-events-auto"
+      className=" flex items-center justify-center gap-1.5 pointer-events-auto"
     >
       <IconButton
         Icon={Sparkles}
