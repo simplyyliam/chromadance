@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
-
-type GridStage = "entering" | "breathing" | "leaving";
+import { frameAt, STAGE_SECONDS, type GridStage, type TimelineFrame } from "./timeline";
 
 type ExtractionShaderOverlayProps = {
   imageRef: RefObject<HTMLImageElement | null>;
-  imageVersion: number;
+  imageVersion?: number;
+  /** Shared run start timestamp from `useExtractionTimeline`. */
+  startAtRef: RefObject<number>;
   stage: GridStage | null;
   width: number;
   height: number;
@@ -20,6 +21,12 @@ void main() {
 }
 `;
 
+/**
+ * The artwork is sampled at its exact, undistorted coordinates. Every animated
+ * element here is *light* - ripple highlights, an expanding wavefront, a
+ * breathing core glow, caustic banding - composited over pixels that never move.
+ * That means the effect can never leave the image stretched once it finishes.
+ */
 const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
@@ -28,74 +35,88 @@ out vec4 fragColor;
 
 uniform sampler2D u_image;
 uniform vec2  u_resolution;
+uniform vec4  u_cover;      // xy = scale, zw = offset (replicates object-cover)
 uniform float u_time;
-uniform float u_stageProgress;
-uniform int   u_stage;
+uniform float u_stageTime;  // seconds elapsed within the current stage
+uniform float u_progress;
+uniform int   u_stage;      // 0 entering, 1 breathing, 2 leaving
 
-const vec3  KLEIN_BLUE = vec3(0.0, 0.18, 0.49);
-const float PI = 3.14159265359;
+const vec3  NEUTRAL = vec3(0.55, 0.55, 0.60);
+const float TAU   = 6.28318530718;
+
+// Raise above 0.0 to let the ripple actually refract the artwork. Kept at 0.0
+// so the image is never warped or stretched - only the light on top of it is.
+const float IMAGE_REFRACTION = 0.0;
+
+float hash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
 
 void main() {
-  // Aspect-correct coordinates centered at the middle of the image.
   float aspect = u_resolution.x / max(u_resolution.y, 1.0);
-  vec2  uv   = v_uv;
-  vec2  p    = (uv - 0.5) * vec2(aspect, 1.0);
-  float dist = length(p);
+  vec2  uv  = v_uv;
+  vec2  p   = (uv - 0.5) * vec2(aspect, 1.0);
+  float d   = length(p);
+  float nd  = d / max(1e-5, length(vec2(aspect, 1.0)) * 0.5);
+  vec2  dir = d > 1e-5 ? p / d : vec2(0.0);
 
-  // ---- stage intensity ----
+  // Map to the same crop the <img> shows, so the shader lines up with the DOM.
+  vec2 imageUV  = uv * u_cover.xy + u_cover.zw;
+  vec3 pristine = texture(u_image, imageUV).rgb;
+
   float intensity =
-      u_stage == 0 ? smoothstep(0.0, 1.0, u_stageProgress) :        // entering
-      u_stage == 1 ? 1.0 :                                          // breathing
-                     1.0 - smoothstep(0.0, 1.0, u_stageProgress);   // leaving
+      u_stage == 0 ? smoothstep(0.0, 1.0, u_progress) :
+      u_stage == 1 ? 1.0 :
+                     1.0 - smoothstep(0.0, 1.0, u_progress);
 
-  vec2 warped = p;
+  // ---- ripple height field: used for shading only, never to move pixels ----
+  float phase  = d * 34.0 - u_time * 2.6;
+  float height = sin(phase);
+  // Radial derivative of the height map approximates a surface normal, which
+  // is what gives the convincing glass-ripple highlight without displacement.
+  float slope  = cos(phase) * 34.0;
 
-  // ---- 1. PINCH / BULGE: pull content gently toward the center ----
-  // No rotation, so nothing ever flips. Strong at center, eases out to edges.
-  float pinch = 1.0 - 0.28 * intensity * exp(-dist * 2.5);
-  warped *= pinch;
+  // ---- wavefront: tracks the stage, loops continuously while breathing ----
+  // Driven by time within the stage (not global time) so each ripple starts at
+  // the centre instead of popping into existence mid-frame at a stage change.
+  float frontR = (u_stage == 1 ? fract(u_stageTime * 0.42) : u_progress) * 1.18;
+  float front  = smoothstep(0.11, 0.0, abs(nd - frontR));
 
-  // ---- 2. RIPPLE ring expanding from center (glass wave) ----
-  float ringR  = u_stageProgress * 1.2;
-  float ring   = smoothstep(0.08, 0.0, abs(dist - ringR));
-  float ripple = ring * 0.03 * intensity;
-  warped += normalize(p + 1e-5) * sin((dist - u_time * 0.6) * 40.0) * ripple;
+  // ---- breathing core glow ----
+  float breath = 0.5 + 0.5 * sin(u_time * 1.7);
+  float core   = exp(-d * 3.1) * (0.42 + 0.58 * breath);
 
-  // ---- 3. gentle breathing lens wobble (still no rotation) ----
-  float wobble = 0.015 * intensity * sin(u_time * 1.2) * exp(-dist * 3.0);
-  warped += normalize(p + 1e-5) * wobble;
+  // ---- caustic banding riding the ripple ----
+  float bands = pow(0.5 + 0.5 * height, 4.0);
 
-  // Back to texture space.
-  vec2 warpedUV = warped / vec2(aspect, 1.0) + 0.5;
+  float grain = (hash(uv * u_resolution + u_time * 60.0) - 0.5) * 0.04;
 
-  // ---- chromatic split along the radial axis ----
-  vec2 ca = normalize(p + 1e-5) * 0.004 * intensity;
-  vec3 warpedColor = vec3(
-    texture(u_image, warpedUV + ca).r,
-    texture(u_image, warpedUV).g,
-    texture(u_image, warpedUV - ca).b
-  );
+  // Optional, disabled by default.
+  vec2 refracted = imageUV + dir * (height * IMAGE_REFRACTION * intensity);
+  vec3 base = IMAGE_REFRACTION > 0.0 ? texture(u_image, refracted).rgb : pristine;
 
-  // Guard against sampling outside the image (would read as black).
-  vec2  inside = step(vec2(0.0), warpedUV) * step(warpedUV, vec2(1.0));
-  float mask   = inside.x * inside.y;
-  vec3  base   = texture(u_image, uv).rgb;
-  warpedColor  = mix(base, warpedColor, mask);
+  // ---- additive light, screen-blended so the artwork stays readable ----
+  vec3 light = vec3(0.0);
+  light += NEUTRAL * core * 0.60;
+  light += vec3(0.55, 0.72, 1.00) * front * front * 0.55;
+  light += NEUTRAL * bands * 0.26;
+  light += vec3(clamp(slope * 0.02, 0.0, 1.0)) * 0.16 * (0.25 + 0.75 * front);
 
-  // ---- Klein-blue glass tint + ring highlight + center glow ----
-  vec3 tinted = mix(warpedColor, KLEIN_BLUE, 0.25 * intensity);
-  tinted += vec3(ring * 0.35 * intensity);
-  tinted += KLEIN_BLUE * exp(-dist * 4.0) * 0.3 * intensity;
+  vec3 tinted = mix(base, NEUTRAL, 0.16 * intensity);
+  vec3 lit    = 1.0 - (1.0 - tinted) * (1.0 - clamp(light * intensity, 0.0, 1.0));
+  lit += grain * intensity;
 
-  vec3 finalColor = mix(base, tinted, intensity);
-
-  fragColor = vec4(finalColor, 1.0);
+  // Guarantees the frame resolves back to the untouched image.
+  fragColor = vec4(mix(pristine, lit, intensity), 1.0);
 }
 `;
 
 export const ExtractionShaderOverlay = ({
   imageRef,
   imageVersion,
+  startAtRef,
   stage,
   width,
   height,
@@ -104,105 +125,54 @@ export const ExtractionShaderOverlay = ({
   const glRef = useRef<WebGL2RenderingContext | null>(null);
   const programRef = useRef<WebGLProgram | null>(null);
   const textureRef = useRef<WebGLTexture | null>(null);
+  const rafRef = useRef(0);
+
   const uniformsRef = useRef<{
     time: WebGLUniformLocation | null;
+    stageTime: WebGLUniformLocation | null;
     resolution: WebGLUniformLocation | null;
-    stageProgress: WebGLUniformLocation | null;
+    cover: WebGLUniformLocation | null;
+    progress: WebGLUniformLocation | null;
     stage: WebGLUniformLocation | null;
   } | null>(null);
 
-  const rafRef = useRef<number>(0);
-  const startTimeRef = useRef<number>(0);
-  const stageStartTimeRef = useRef<number>(0);
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const reducedMotionRef = useRef<MediaQueryList | null>(null);
-
-  // Keep the latest stage/size in refs so the render loop always reads
-  // current values without being torn down on every prop change.
-  const stageRef = useRef<GridStage | null>(stage);
+  /** object-cover mapping: [scaleX, scaleY, offsetX, offsetY]. */
+  const coverRef = useRef<[number, number, number, number]>([1, 1, 0, 0]);
   const sizeRef = useRef({ width, height });
-  useEffect(() => {
-    stageRef.current = stage;
-  }, [stage]);
+
   useEffect(() => {
     sizeRef.current = { width, height };
   }, [width, height]);
 
-  // Draw a single frame using the current refs.
-  const drawFrame = useCallback((elapsed: number, stageProgress: number) => {
+  /* -------------------------------------------------------------- draw a frame */
+
+  const drawFrame = useCallback((frame: TimelineFrame) => {
     const gl = glRef.current;
     const program = programRef.current;
     const uniforms = uniformsRef.current;
-    const currentStage = stageRef.current;
-    if (!gl || !program || !uniforms || !currentStage) return;
+    if (!gl || !program || !uniforms) return;
 
     gl.useProgram(program);
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, textureRef.current);
 
-    gl.uniform1f(uniforms.time, elapsed);
+    gl.uniform1f(uniforms.time, frame.elapsed);
+    gl.uniform1f(uniforms.stageTime, frame.stageProgress * STAGE_SECONDS[frame.stage]);
     gl.uniform2f(uniforms.resolution, sizeRef.current.width, sizeRef.current.height);
-
-    const stageInt =
-      currentStage === "entering" ? 0 : currentStage === "breathing" ? 1 : 2;
-    gl.uniform1i(uniforms.stage, stageInt);
-    gl.uniform1f(uniforms.stageProgress, stageProgress);
+    gl.uniform4f(uniforms.cover, ...coverRef.current);
+    gl.uniform1f(uniforms.progress, frame.stageProgress);
+    gl.uniform1i(
+      uniforms.stage,
+      frame.stage === "entering" ? 0 : frame.stage === "breathing" ? 1 : 2,
+    );
 
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }, []);
 
-  const stageProgressFor = (currentStage: GridStage, stageElapsed: number) => {
-    if (currentStage === "entering") return Math.min(stageElapsed / 1.0, 1.0);
-    if (currentStage === "breathing") return (stageElapsed % 1.5) / 1.5;
-    return Math.min(stageElapsed / 0.8, 1.0); // leaving
-  };
+  /* ------------------------------------------------------------ one-time setup */
 
-  const stopAnimation = useCallback(() => {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    }
-  }, []);
-
-  const startAnimation = useCallback(() => {
-    stopAnimation();
-    if (!startTimeRef.current) startTimeRef.current = performance.now();
-    stageStartTimeRef.current = performance.now();
-
-    const render = (time: number) => {
-      const currentStage = stageRef.current;
-      if (!currentStage) {
-        rafRef.current = 0;
-        return;
-      }
-
-      const elapsed = (time - startTimeRef.current) / 1000;
-      const stageElapsed = (time - stageStartTimeRef.current) / 1000;
-      drawFrame(elapsed, stageProgressFor(currentStage, stageElapsed));
-
-      if (!reducedMotionRef.current?.matches) {
-        rafRef.current = requestAnimationFrame(render);
-      } else {
-        rafRef.current = 0;
-      }
-    };
-
-    rafRef.current = requestAnimationFrame(render);
-  }, [drawFrame, stopAnimation]);
-
-  const handleMotionChange = useCallback(() => {
-    if (stageRef.current && !reducedMotionRef.current?.matches) {
-      startAnimation();
-    } else {
-      stopAnimation();
-      // Draw one static frame so the effect is still visible when paused.
-      if (stageRef.current) drawFrame(0, 0.5);
-    }
-  }, [startAnimation, stopAnimation, drawFrame]);
-
-  // One-time WebGL setup: context, shaders, program, buffer, texture.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -213,12 +183,12 @@ export const ExtractionShaderOverlay = ({
       preserveDrawingBuffer: false,
     });
     if (!gl) {
-      console.warn("WebGL2 not available; shader overlay will not render");
+      console.warn("WebGL2 unavailable; extraction shader will not render");
       return;
     }
     glRef.current = gl;
 
-    const compile = (type: number, src: string) => {
+    const compile = (type: number, src: string): WebGLShader | null => {
       const shader = gl.createShader(type);
       if (!shader) return null;
       gl.shaderSource(shader, src);
@@ -240,7 +210,6 @@ export const ExtractionShaderOverlay = ({
     gl.attachShader(program, vert);
     gl.attachShader(program, frag);
     gl.linkProgram(program);
-    // Shaders can be deleted once linked.
     gl.deleteShader(vert);
     gl.deleteShader(frag);
 
@@ -249,32 +218,33 @@ export const ExtractionShaderOverlay = ({
       gl.deleteProgram(program);
       return;
     }
+
     programRef.current = program;
     gl.useProgram(program);
 
-    // Cache uniform locations.
     uniformsRef.current = {
       time: gl.getUniformLocation(program, "u_time"),
+      stageTime: gl.getUniformLocation(program, "u_stageTime"),
       resolution: gl.getUniformLocation(program, "u_resolution"),
-      stageProgress: gl.getUniformLocation(program, "u_stageProgress"),
+      cover: gl.getUniformLocation(program, "u_cover"),
+      progress: gl.getUniformLocation(program, "u_progress"),
       stage: gl.getUniformLocation(program, "u_stage"),
     };
     // Bind the sampler to texture unit 0.
     gl.uniform1i(gl.getUniformLocation(program, "u_image"), 0);
 
     // Fullscreen triangle.
-    const positionBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(
       gl.ARRAY_BUFFER,
       new Float32Array([-1, -1, 3, -1, -1, 3]),
-      gl.STATIC_DRAW
+      gl.STATIC_DRAW,
     );
     const positionLoc = gl.getAttribLocation(program, "a_position");
     gl.enableVertexAttribArray(positionLoc);
     gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
-    // Texture.
     const texture = gl.createTexture();
     if (!texture) return;
     textureRef.current = texture;
@@ -283,8 +253,7 @@ export const ExtractionShaderOverlay = ({
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    // Upload a 1x1 black placeholder so the texture is complete before the
-    // real image loads (an incomplete texture samples as black).
+    // A complete 1x1 placeholder: an incomplete texture samples as pure black.
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -294,18 +263,16 @@ export const ExtractionShaderOverlay = ({
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
-      new Uint8Array([0, 0, 0, 255])
+      new Uint8Array([0, 0, 0, 255]),
     );
 
     gl.clearColor(0, 0, 0, 1);
 
-    // Reduced-motion listener (same reference for add + remove).
-    reducedMotionRef.current = window.matchMedia("(prefers-reduced-motion: reduce)");
-    reducedMotionRef.current.addEventListener("change", handleMotionChange);
-
     return () => {
-      stopAnimation();
-      reducedMotionRef.current?.removeEventListener("change", handleMotionChange);
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
       if (programRef.current) {
         gl.deleteProgram(programRef.current);
         programRef.current = null;
@@ -314,35 +281,29 @@ export const ExtractionShaderOverlay = ({
         gl.deleteTexture(textureRef.current);
         textureRef.current = null;
       }
+      if (buffer) gl.deleteBuffer(buffer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleMotionChange, stopAnimation]);
+  }, []);
 
-  // Keep the canvas backing store sized to the props / DPR.
+  /* ---------------------------------------------------------------- canvas size */
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const gl = glRef.current;
-    if (!canvas || !gl) return;
+    if (!canvas || !gl || width <= 0 || height <= 0) return;
 
-    const applySize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const w = Math.max(1, Math.round(width * dpr));
-      const h = Math.max(1, Math.round(height * dpr));
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-      }
-      gl.viewport(0, 0, canvas.width, canvas.height);
-    };
-
-    applySize();
-
-    resizeObserverRef.current = new ResizeObserver(applySize);
-    resizeObserverRef.current.observe(canvas);
-    return () => resizeObserverRef.current?.disconnect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.round(width * dpr));
+    const h = Math.max(1, Math.round(height * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    gl.viewport(0, 0, canvas.width, canvas.height);
   }, [width, height]);
 
-  // Upload the source image to the texture (with load-retry).
+  /* ------------------------------------------------------------ texture upload */
+
   useEffect(() => {
     const gl = glRef.current;
     const texture = textureRef.current;
@@ -353,54 +314,93 @@ export const ExtractionShaderOverlay = ({
 
     const upload = () => {
       if (cancelled) return;
+
       if (!img.complete || img.naturalWidth === 0) {
         img.addEventListener("load", upload, { once: true });
         return;
       }
+
       gl.bindTexture(gl.TEXTURE_2D, texture);
+      // DOM images are top-left origin, WebGL textures are bottom-left.
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
       try {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-      } catch (err) {
-        // Most commonly a cross-origin image without crossOrigin="anonymous".
-        console.warn("Texture upload failed (is the image cross-origin?):", err);
+      } catch (error) {
+        console.warn("Texture upload failed (cross-origin image?):", error);
+        return;
       }
-      // Redraw a static frame so the newly uploaded image is visible even
-      // when no animation is running.
-      if (stageRef.current && !rafRef.current) drawFrame(0, 0.5);
+
+      // Recompute the object-cover crop for the current image and box.
+      const { width: boxWidth, height: boxHeight } = sizeRef.current;
+      if (boxWidth > 0 && boxHeight > 0) {
+        const boxAspect = boxWidth / boxHeight;
+        const imageAspect = img.naturalWidth / img.naturalHeight;
+
+        if (imageAspect > boxAspect) {
+          const scaleX = boxAspect / imageAspect;
+          coverRef.current = [scaleX, 1, (1 - scaleX) / 2, 0];
+        } else {
+          const scaleY = imageAspect / boxAspect;
+          coverRef.current = [1, scaleY, 0, (1 - scaleY) / 2];
+        }
+      }
     };
 
     upload();
+
     return () => {
       cancelled = true;
       img.removeEventListener("load", upload);
     };
-  }, [imageRef, imageVersion, drawFrame]);
+  }, [imageRef, imageVersion, width, height]);
 
-  // Start / stop the animation whenever the stage changes.
+  /* ---------------------------------------------------------------- render loop */
+
   useEffect(() => {
-    if (!stage) {
-      stopAnimation();
-      startTimeRef.current = 0;
-      stageStartTimeRef.current = 0;
+    if (!stage || width <= 0 || height <= 0) return;
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      drawFrame({ elapsed: 0, stage: "breathing", stageProgress: 0.5, done: false });
       return;
     }
-    if (reducedMotionRef.current?.matches) {
-      // Static frame only.
-      drawFrame(0, 0.5);
-      return;
-    }
-    startAnimation();
-    return stopAnimation;
-  }, [stage, startAnimation, stopAnimation, drawFrame]);
 
-  if (!stage) return null;
+    const loop = (now: number) => {
+      const startAt = startAtRef.current;
+      if (!startAt) {
+        rafRef.current = 0;
+        return;
+      }
 
+      const frame = frameAt((now - startAt) / 1000);
+      drawFrame(frame);
+
+      if (frame.done) {
+        rafRef.current = 0;
+        return;
+      }
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    rafRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
+    };
+  }, [stage, width, height, drawFrame, startAtRef]);
+
+  // Always mounted, only hidden: unmounting the canvas while idle would mean the
+  // WebGL context, program and texture are never created, and the one-time setup
+  // effect would not run again once a stage arrives.
   return (
     <canvas
       ref={canvasRef}
-      className="absolute inset-0 pointer-events-none"
-      style={{ width, height }}
+      className="absolute inset-0 z-10 pointer-events-none"
+      style={{ width, height, visibility: stage ? "visible" : "hidden" }}
       aria-hidden="true"
     />
   );

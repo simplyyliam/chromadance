@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, type DragEvent, type ChangeEvent } from 'react';
+import { useState, useRef, useEffect, type DragEvent, type ChangeEvent } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Image01Icon } from '@hugeicons/core-free-icons';
 import {
@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/empty";
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Countdown, ExtractionShaderOverlay, ProbeGrid, type GridStage } from '@/features/extraction';
+import { Countdown, ExtractionShaderOverlay, ProbeGrid, useExtractionTimeline } from '@/features/extraction';
 import { useExtractionStore } from '@/store/extractionStore';
 import { motion } from 'motion/react';
 
@@ -23,10 +23,14 @@ export default function ImageContainer() {
   const isShaderEnabled = useExtractionStore((s) => s.isShaderEnabled);
   const isImageExpanded = useExtractionStore((s) => s.isImageExpanded);
   const toggleImageExpanded = useExtractionStore((s) => s.toggleImageExpanded);
+  const areProbesVisible = useExtractionStore((s) => s.areProbesVisible);
+
+  const { stage, startAtRef } = useExtractionTimeline();
+  
   const [isDragging, setIsDragging] = useState(false);
   const [imageVersion, setImageVersion] = useState(0);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-  const [gridStage, setGridStage] = useState<GridStage | null>(null);
+  // const [gridStage, setGridStage] = useState<GridStage | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,13 +73,13 @@ export default function ImageContainer() {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (phase !== 'extracting') setGridStage(null);
-  }, [phase]);
+  // useEffect(() => {
+  //   if (phase !== 'extracting') setGridStage(null);
+  // }, [phase]);
 
-  const handleStageChange = useCallback((stage: GridStage) => {
-    setGridStage(stage);
-  }, []);
+  // const handleStageChange = useCallback((stage: GridStage) => {
+  //   setGridStage(stage);
+  // }, []);
 
   const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -165,25 +169,28 @@ export default function ImageContainer() {
               onLoad={handleImageLoad}
               className="relative z-0 h-full w-full object-cover"
             />
-            {phase === 'extracting' && isShaderEnabled && gridStage && (
+            {isShaderEnabled && (
               <ExtractionShaderOverlay
                 imageRef={imageRef}
                 imageVersion={imageVersion}
-                stage={gridStage}
+                startAtRef={startAtRef}
+                stage={stage}
                 width={containerSize.width}
                 height={containerSize.height}
               />
             )}
-            {(phase === 'extracting' || phase === 'clustering') && (
+            {areProbesVisible && (
               <ProbeGrid
                 canvasRef={canvasRef}
+                startAtRef={startAtRef}
+                stage={stage}
                 imageVersion={imageVersion}
                 containerWidth={containerSize.width}
                 containerHeight={containerSize.height}
-                onStageChange={handleStageChange}
               />
             )}
             {phase === 'countdown' && <Countdown />}
+
           </>
         ) : (
           <Empty>
