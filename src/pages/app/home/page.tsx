@@ -1,3 +1,4 @@
+import { SeedSelection } from "@/features/KOTC";
 import { useExtractionStore } from "@/store/extractionStore";
 import { ImageContainer } from "@/widgets";
 import Toolbar from "@/widgets/toolbar/toolbar";
@@ -43,6 +44,28 @@ export default function Home() {
         className="absolute bottom-5"
       >
         <Toolbar />
+      </motion.div>
+      <motion.div
+        animate={
+          !shouldCollapse
+            ? {
+                scale: 0.95,
+                opacity: 0,
+                filter: 'blur(8px)',
+              }
+            : {
+                scale: 1,
+                opacity: 1,
+                filter: 'blur(0px)',
+              }
+        }
+        transition={{ duration: 0.45, ease: 'easeInOut' }}
+        style={{
+          pointerEvents: !shouldCollapse ? 'none' : 'auto',
+        }}
+        className="absolute inset-0 flex items-center justify-center"
+      >
+        {phase === 'clustering' && <SeedSelection/> }
       </motion.div>
     </div>
   )
