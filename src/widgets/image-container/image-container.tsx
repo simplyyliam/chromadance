@@ -28,19 +28,34 @@ export default function ImageContainer({ shouldCollapse }: ImageContainerProps) 
   const phase = useExtractionStore((s) => s.phase);
   const isShaderEnabled = useExtractionStore((s) => s.isShaderEnabled);
   const toggleImageExpanded = useExtractionStore((s) => s.toggleImageExpanded);
-  const areProbesVisible = useExtractionStore((s) => s.areProbesVisible);
 
   const { stage, startAtRef } = useExtractionTimeline();
-  const [isAnimating, setIsAnimating] = useState(false);
+  const [hasLanded, setHasLanded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [imageVersion, setImageVersion] = useState(0);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [viewportHeight, setViewportHeight] = useState(0);
   // const [gridStage, setGridStage] = useState<GridStage | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+
+  /** Visible strip left above the bottom edge once the image has collapsed. */
+  const PEEK_HEIGHT = 90;
+  const HOVER_LIFT = 24;
+  const COLLAPSED_SCALE = 0.95;
+
+  /** The page centers the container vertically. Scaling happens around its
+   *  centre, so include half of the scale reduction when positioning its
+   *  visual top edge at `viewportHeight - PEEK_HEIGHT`. */
+  const restTop = (viewportHeight - containerSize.height) / 2;
+  const scaleInset = containerSize.height * (1 - COLLAPSED_SCALE) / 2;
+  const collapseY = Math.max(
+    0,
+    viewportHeight - PEEK_HEIGHT - restTop - scaleInset,
+  );
 
   useEffect(() => {
     if (!image) return;
@@ -59,24 +74,37 @@ export default function ImageContainer({ shouldCollapse }: ImageContainerProps) 
     setImageVersion((version) => version + 1);
   }, [image]);
 
+  // clientWidth/clientHeight are the untransformed layout dimensions, so the
+  // calculation remains stable while the element is scaled and translated.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const updateSize = (width: number, height: number) => setContainerSize({ width, height });
-    const rect = container.getBoundingClientRect();
-    updateSize(rect.width, rect.height);
+    const updateMeasurements = () => {
+      setViewportHeight(window.innerHeight);
+      setContainerSize({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
+    };
 
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        updateSize(width, height);
-      }
-    });
+    updateMeasurements();
 
+    const observer = new ResizeObserver(updateMeasurements);
     observer.observe(container);
-    return () => observer.disconnect();
+    window.addEventListener('resize', updateMeasurements);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateMeasurements);
+    };
   }, []);
+
+  // The container only accepts hover/tap after it has actually completed the
+  // downward motion - never while it is travelling into place.
+  useEffect(() => {
+    setHasLanded(false);
+  }, [shouldCollapse]);
 
   // useEffect(() => {
   //   if (phase !== 'extracting') setGridStage(null);
@@ -146,12 +174,12 @@ export default function ImageContainer({ shouldCollapse }: ImageContainerProps) 
         ref={containerRef}
         animate={
           shouldCollapse
-            ? { y: 620, scale: 0.95 }
+            ? { y: collapseY, scale: 0.95 }
             : { y: 0, scale: 1 }
         }
         whileHover={
-          shouldCollapse && !isAnimating
-            ? { y: 590, scale: 0.95 }
+          shouldCollapse && hasLanded
+            ? { y: collapseY - HOVER_LIFT, scale: 0.95 }
             : undefined
         }
         transition={{
@@ -161,12 +189,16 @@ export default function ImageContainer({ shouldCollapse }: ImageContainerProps) 
           mass: 0.5,
         }}
         whileTap={
-          shouldCollapse && !isAnimating
-            ? { y: 585, scale: 0.945 }
+          shouldCollapse && hasLanded
+            ? { y: collapseY - HOVER_LIFT - 5, scale: 0.945 }
             : undefined
         }
-        onAnimationComplete={() => setIsAnimating(false)}
-        onClick={() => phase === 'contenders' && toggleImageExpanded()}
+        onAnimationComplete={() => {
+          if (shouldCollapse) setHasLanded(true);
+        }}
+        onClick={() => {
+          if (phase === 'contenders') toggleImageExpanded();
+        }}
         className={`relative z-40 flex h-[60svh] w-[55svw] items-center justify-center overflow-hidden bg-klein shadow-2xl transition-colors ${isDragging ? 'ring-2 ring-inset ring-primary' : ''}`}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -204,16 +236,14 @@ export default function ImageContainer({ shouldCollapse }: ImageContainerProps) 
                 height={containerSize.height}
               />
             )}
-            {areProbesVisible && (
-              <ProbeGrid
-                canvasRef={canvasRef}
-                startAtRef={startAtRef}
-                stage={stage}
-                imageVersion={imageVersion}
-                containerWidth={containerSize.width}
-                containerHeight={containerSize.height}
-              />
-            )}
+            <ProbeGrid
+              canvasRef={canvasRef}
+              startAtRef={startAtRef}
+              stage={stage}
+              imageVersion={imageVersion}
+              containerWidth={containerSize.width}
+              containerHeight={containerSize.height}
+            />
             {phase === 'countdown' && <Countdown />}
 
           </>

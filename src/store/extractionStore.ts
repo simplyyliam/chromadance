@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { indexedDbStorage } from './indexedDbStorage';
 
 // Phase system for the extraction workflow
 export type ExtractionPhase =
@@ -43,6 +42,7 @@ export type ExtractionStore = {
   gridCols: number;
   gridRows: number;
   probeSize: number;
+  containerDimensionsAtExtraction?: { width: number; height: number };
 
   // Collected data
   extractedColors: ExtractedColor[];
@@ -51,7 +51,6 @@ export type ExtractionStore = {
 
   // Animation states
   isCountingDown: boolean;
-  areProbesVisible: boolean;
   isShaderEnabled: boolean;
   isExtracting: boolean;
   isContending: boolean;
@@ -70,7 +69,7 @@ export type ExtractionStore = {
   setCountdown: (count: number) => void;
 
   // Actions - Extraction
-  setExtractedColors: (colors: ExtractedColor[]) => void;
+  setExtractedColors: (colors: ExtractedColor[], dimensions?: { width: number; height: number }) => void;
   addExtractedColor: (color: ExtractedColor) => void;
   updateExtractedColor: (id: string, updates: Partial<ExtractedColor>) => void;
   clearExtractedColors: () => void;
@@ -85,8 +84,6 @@ export type ExtractionStore = {
   clearPalette: () => void;
 
   // Actions - Animation
-  setProbesVisible: (visible: boolean) => void;
-  toggleProbesVisible: () => void;
   setShaderEnabled: (enabled: boolean) => void;
   toggleShaderEnabled: () => void;
   setExtracting: (extracting: boolean) => void;
@@ -120,7 +117,6 @@ export const useExtractionStore = create<ExtractionStore>()(
 
       // Animation states
       isCountingDown: false,
-      areProbesVisible: false,
       isShaderEnabled: true,
       isExtracting: false,
       isContending: false,
@@ -138,6 +134,7 @@ export const useExtractionStore = create<ExtractionStore>()(
         phase: 'idle',
         countdown: 0,
         extractedColors: [],
+        containerDimensionsAtExtraction: undefined,
         clusters: [],
         palette: [],
         isExtracting: false,
@@ -171,7 +168,10 @@ export const useExtractionStore = create<ExtractionStore>()(
       setCountdown: (count) => set({ countdown: count }),
 
       // Actions - Extraction
-      setExtractedColors: (colors) => set({ extractedColors: colors }),
+      setExtractedColors: (colors, dimensions) => set({
+        extractedColors: colors,
+        containerDimensionsAtExtraction: dimensions,
+      }),
 
       addExtractedColor: (color) => set((state) => ({
         extractedColors: [...state.extractedColors, color],
@@ -205,10 +205,6 @@ export const useExtractionStore = create<ExtractionStore>()(
       clearPalette: () => set({ palette: [] }),
 
       // Actions - Animation
-      setProbesVisible: (visible) => set({ areProbesVisible: visible }),
-
-      toggleProbesVisible: () => set((state) => ({ areProbesVisible: !state.areProbesVisible })),
-
       setShaderEnabled: (enabled) => set({ isShaderEnabled: enabled }),
 
       toggleShaderEnabled: () => set((state) => ({ isShaderEnabled: !state.isShaderEnabled })),
@@ -225,28 +221,15 @@ export const useExtractionStore = create<ExtractionStore>()(
     }),
     {
       name: 'extraction-store',
-      storage: createJSONStorage(() => indexedDbStorage),
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         image: state.image,
-        phase: state.phase,
-        extractedColors: state.extractedColors,
-        clusters: state.clusters,
-        palette: state.palette,
-        areProbesVisible: state.areProbesVisible,
         isShaderEnabled: state.isShaderEnabled,
       }),
       onRehydrateStorage: () => {
         return (state) => {
           if (state) {
             state.isHydrated = true;
-            // Reset phase on page refresh, keep the image and preferences
-            if (state.phase !== 'idle') {
-              state.phase = 'idle';
-              state.countdown = 0;
-              state.extractedColors = [];
-              state.clusters = [];
-              state.palette = [];
-            }
           }
         };
       },

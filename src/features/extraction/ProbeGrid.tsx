@@ -170,7 +170,10 @@ export const ProbeGrid = ({
       };
     });
 
-    setExtractedColors(extracted);
+    setExtractedColors(extracted, {
+      width: containerWidth,
+      height: containerHeight,
+    });
   }, [
     stage,
     canvasRef,

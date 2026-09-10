@@ -1,4 +1,4 @@
-import { Eye, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { IconButton } from "@/shared/components/IconButton";
 import { useExtractionStore } from "@/store/extractionStore";
 import { motion } from "motion/react";
@@ -7,9 +7,7 @@ export default function Toolbar() {
   const phase = useExtractionStore((s) => s.phase);
   const reset = useExtractionStore((s) => s.reset);
   const start = useExtractionStore((s) => s.startCountdown);
-  const areProbesVisible = useExtractionStore((s) => s.areProbesVisible);
   const isShaderEnabled = useExtractionStore((s) => s.isShaderEnabled);
-  const toggleProbesVisible = useExtractionStore((s) => s.toggleProbesVisible);
   const toggleShaderEnabled = useExtractionStore((s) => s.toggleShaderEnabled);
 
   return (
@@ -28,16 +26,6 @@ export default function Toolbar() {
         variant="ghost"
         className={`w-20 h-11.5 rounded-md transition-colors ${isShaderEnabled ? "bg-muted" : "bg-muted/40 text-muted-foreground"}`}
         onClick={toggleShaderEnabled}
-      />
-      <IconButton
-        Icon={Eye}
-        Label="Probes"
-        ariaLabel={`${areProbesVisible ? "Hide" : "Show"} extraction probes`}
-        title={`${areProbesVisible ? "Hide" : "Show"} extraction probes`}
-        pressed={areProbesVisible}
-        variant="ghost"
-        className={`w-20 h-11.5 rounded-md transition-colors ${areProbesVisible ? "bg-muted" : "bg-muted/40 text-muted-foreground"}`}
-        onClick={toggleProbesVisible}
       />
       <IconButton
         variant="ghost"
