@@ -52,10 +52,12 @@ export type ExtractionStore = {
   // Animation states
   isCountingDown: boolean;
   areProbesVisible: boolean;
+  isShaderEnabled: boolean;
   isExtracting: boolean;
   isClustering: boolean;
   isPaletteGenerating: boolean;
   isImageExpanded: boolean;   // For the click-to-expand animation
+  isExiting: boolean;
 
   // Actions - Core
   setImage: (image: string | null) => void;
@@ -84,6 +86,9 @@ export type ExtractionStore = {
 
   // Actions - Animation
   setProbesVisible: (visible: boolean) => void;
+  toggleProbesVisible: () => void;
+  setShaderEnabled: (enabled: boolean) => void;
+  toggleShaderEnabled: () => void;
   setExtracting: (extracting: boolean) => void;
   setClustering: (clustering: boolean) => void;
   setPaletteGenerating: (generating: boolean) => void;
@@ -116,6 +121,7 @@ export const useExtractionStore = create<ExtractionStore>()(
       // Animation states
       isCountingDown: false,
       areProbesVisible: false,
+      isShaderEnabled: true,
       isExtracting: false,
       isClustering: false,
       isPaletteGenerating: false,
@@ -134,7 +140,6 @@ export const useExtractionStore = create<ExtractionStore>()(
         extractedColors: [],
         clusters: [],
         palette: [],
-        areProbesVisible: false,
         isExtracting: false,
         isClustering: false,
         isPaletteGenerating: false,
@@ -142,11 +147,17 @@ export const useExtractionStore = create<ExtractionStore>()(
       }),
 
       // Actions - Countdown
-      startCountdown: (duration) => set((state) => ({
-        phase: 'countdown',
-        countdown: Math.ceil((duration ?? state.countdownDuration) / 1000),
-        isCountingDown: true,
-      })),
+      startCountdown: (duration) => set((state) => {
+        const durationMs: number = typeof duration === 'number' && Number.isFinite(duration) && duration > 0
+          ? duration
+          : state.countdownDuration ?? 3000;
+
+        return {
+          phase: 'countdown',
+          countdown: Math.ceil(durationMs / 1000),
+          isCountingDown: true,
+        };
+      }),
 
       decrementCountdown: () => set((state) => {
         const newCount = state.countdown - 1;
@@ -196,6 +207,12 @@ export const useExtractionStore = create<ExtractionStore>()(
       // Actions - Animation
       setProbesVisible: (visible) => set({ areProbesVisible: visible }),
 
+      toggleProbesVisible: () => set((state) => ({ areProbesVisible: !state.areProbesVisible })),
+
+      setShaderEnabled: (enabled) => set({ isShaderEnabled: enabled }),
+
+      toggleShaderEnabled: () => set((state) => ({ isShaderEnabled: !state.isShaderEnabled })),
+
       setExtracting: (extracting) => set({ isExtracting: extracting }),
 
       setClustering: (clustering) => set({ isClustering: clustering }),
@@ -215,12 +232,14 @@ export const useExtractionStore = create<ExtractionStore>()(
         extractedColors: state.extractedColors,
         clusters: state.clusters,
         palette: state.palette,
+        areProbesVisible: state.areProbesVisible,
+        isShaderEnabled: state.isShaderEnabled,
       }),
       onRehydrateStorage: () => {
         return (state) => {
           if (state) {
             state.isHydrated = true;
-            // Reset phase on page refresh, keep the image
+            // Reset phase on page refresh, keep the image and preferences
             if (state.phase !== 'idle') {
               state.phase = 'idle';
               state.countdown = 0;

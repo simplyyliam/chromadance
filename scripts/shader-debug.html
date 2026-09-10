@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGL Shader Debug</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      padding: 20px;
+      line-height: 1.5;
+    }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { margin-bottom: 20px; font-size: 24px; }
+    .section {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .status { font-family: monospace; font-size: 13px; }
+    .status.ok { color: #4ade80; }
+    .status.warn { color: #facc15; }
+    .status.error { color: #ef4444; }
+    canvas {
+      border: 1px solid #333;
+      border-radius: 4px;
+      display: block;
+      margin-top: 12px;
+      max-width: 100%;
+    }
+    button {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-top: 12px;
+    }
+    button:hover { background: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 WebGL Shader Debug</h1>
+
+    <div class="section">
+      <h2>WebGL Support</h2>
+      <div id="gl-support" class="status"></div>
+    </div>
+
+    <div class="section">
+      <h2>Shader Compilation</h2>
+      <div id="shader-compile" class="status"></div>
+      <button onclick="testShaderCompilation()">Test Compilation</button>
+    </div>
+
+    <div class="section">
+      <h2>Canvas & Context</h2>
+      <div id="canvas-status" class="status"></div>
+      <canvas id="test-canvas" width="400" height="300"></canvas>
+      <button onclick="testCanvasRender()">Test Canvas Render</button>
+    </div>
+
+    <div class="section">
+      <h2>Image Texture Upload</h2>
+      <div id="texture-status" class="status"></div>
+      <input type="file" id="image-input" accept="image/*" />
+      <div id="texture-result" class="status" style="margin-top: 12px;"></div>
+    </div>
+
+    <div class="section">
+      <h2>Full Shader Pipeline</h2>
+      <div id="pipeline-status" class="status"></div>
+      <button onclick="testFullPipeline()">Test Full Pipeline</button>
+    </div>
+  </div>
+
+  <script>
+    // Test 1: WebGL Support
+    function testWebGLSupport() {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl2', {
+        alpha: false,
+        antialias: false,
+        preserveDrawingBuffer: false,
+        failIfMajorPerformanceCaveat: true,
+      });
+
+      const el = document.getElementById('gl-support');
+      if (!gl) {
+        el.textContent = 'FAIL: WebGL2 not available';
+        el.className = 'status error';
+        return false;
+      }
+
+      el.innerHTML = `
+        <div class="ok">✓ WebGL2 context created</div>
+        <div>Vendor: ${gl.getParameter(gl.VENDOR)}</div>
+        <div>Renderer: ${gl.getParameter(gl.RENDERER)}</div>
+        <div>Version: ${gl.getParameter(gl.VERSION)}</div>
+      `;
+      el.className = 'status ok';
+      return gl;
+    }
+
+    // Test 2: Shader Compilation
+    function testShaderCompilation() {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl2');
+      if (!gl) {
+        document.getElementById('shader-compile').textContent = 'No WebGL2 context';
+        return;
+      }
+
+      const VERTEX = `#version 300 es
+in vec2 a_position;
+out vec2 v_uv;
+void main() {
+  v_uv = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+
+      const FRAGMENT = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 fragColor;
+uniform sampler2D u_image;
+uniform vec2 u_resolution;
+uniform float u_time;
+
+void main() {
+  vec4 color = texture(u_image, v_uv);
+  fragColor = vec4(color.rgb * 0.5 + vec3(0.0, 0.18, 0.49), 1.0);
+}`;
+
+      const vs = gl.createShader(gl.VERTEX_SHADER);
+      gl.shaderSource(vs, VERTEX);
+      gl.compileShader(vs);
+
+      const fs = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(fs, FRAGMENT);
+      gl.compileShader(fs);
+
+      const el = document.getElementById('shader-compile');
+      let html = '';
+
+      if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+        html += `<div class="error">Vertex: ${gl.getShaderInfoLog(vs)}</div>`;
+      } else {
+        html += `<div class="ok">✓ Vertex shader compiled</div>`;
+      }
+
+      if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+        html += `<div class="error">Fragment: ${gl.getShaderInfoLog(fs)}</div>`;
+      } else {
+        html += `<div class="ok">✓ Fragment shader compiled</div>`;
+      }
+
+      const prog = gl.createProgram();
+      gl.attachShader(prog, vs);
+      gl.attachShader(prog, fs);
+      gl.linkProgram(prog);
+
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        html += `<div class="error">Link: ${gl.getProgramInfoLog(prog)}</div>`;
+      } else {
+        html += `<div class="ok">✓ Program linked</div>`;
+      }
+
+      el.innerHTML = html;
+      el.className = 'status ' + (html.includes('error') ? 'error' : 'ok');
+    }
+
+    // Test 3: Canvas Render
+    function testCanvasRender() {
+      const canvas = document.getElementById('test-canvas');
+      const gl = canvas.getContext('webgl2');
+      if (!gl) {
+        document.getElementById('canvas-status').textContent = 'No WebGL2 context';
+        return;
+      }
+
+      gl.clearColor(0.0, 0.1, 0.3, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      const el = document.getElementById('canvas-status');
+      el.innerHTML = `
+        <div class="ok">✓ Canvas cleared to Klein blue</div>
+        <div>Canvas: ${canvas.width}x${canvas.height}</div>
+        <div>Viewport: ${gl.canvas.width}x${gl.canvas.height}</div>
+      `;
+      el.className = 'status ok';
+    }
+
+    // Test 4: Texture Upload
+    document.getElementById('image-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl2');
+      if (!gl) {
+        document.getElementById('texture-status').textContent = 'No WebGL2';
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const img = new Image();
+        img.onload = () => {
+          const tex = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+          try {
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+            document.getElementById('texture-result').innerHTML = `
+              <div class="ok">✓ Texture uploaded</div>
+              <div>Image: ${img.naturalWidth}x${img.naturalHeight}</div>
+              <div>GL Error: ${gl.getError() === gl.NO_ERROR ? 'None' : gl.getError()}</div>
+            `;
+            document.getElementById('texture-result').className = 'status ok';
+          } catch (err) {
+            document.getElementById('texture-result').innerHTML = `<div class="error">Upload failed: ${err.message}</div>`;
+            document.getElementById('texture-result').className = 'status error';
+          }
+        };
+        img.onerror = () => {
+          document.getElementById('texture-result').innerHTML = `<div class="error">Image load failed</div>`;
+          document.getElementById('texture-result').className = 'status error';
+        };
+        img.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Test 5: Full Pipeline
+    function testFullPipeline() {
+      const canvas = document.getElementById('test-canvas');
+      const gl = canvas.getContext('webgl2');
+      if (!gl) return;
+
+      const VERTEX = `#version 300 es
+in vec2 a_position;
+out vec2 v_uv;
+void main() {
+  v_uv = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+
+      const FRAGMENT = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 fragColor;
+uniform sampler2D u_image;
+void main() {
+  vec4 color = texture(u_image, v_uv);
+  fragColor = vec4(color.rgb * 0.5 + vec3(0.0, 0.18, 0.49), 1.0);
+}`;
+
+      // Compile
+      const vs = gl.createShader(gl.VERTEX_SHADER);
+      gl.shaderSource(vs, VERTEX);
+      gl.compileShader(vs);
+      if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+        document.getElementById('pipeline-status').innerHTML = `<div class="error">VS: ${gl.getShaderInfoLog(vs)}</div>`;
+        document.getElementById('pipeline-status').className = 'status error';
+        return;
+      }
+
+      const fs = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(fs, FRAGMENT);
+      gl.compileShader(fs);
+      if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+        document.getElementById('pipeline-status').innerHTML = `<div class="error">FS: ${gl.getShaderInfoLog(fs)}</div>`;
+        document.getElementById('pipeline-status').className = 'status error';
+        return;
+      }
+
+      const prog = gl.createProgram();
+      gl.attachShader(prog, vs);
+      gl.attachShader(prog, fs);
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        document.getElementById('pipeline-status').innerHTML = `<div class="error">Link: ${gl.getProgramInfoLog(prog)}</div>`;
+        document.getElementById('pipeline-status').className = 'status error';
+        return;
+      }
+
+      // Setup geometry
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+
+      const posLoc = gl.getAttribLocation(prog, 'a_position');
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+      // Create dummy texture
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+      // 2x2 red texture
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+        new Uint8Array([255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255]));
+
+      // Render
+      gl.useProgram(prog);
+      gl.uniform1i(gl.getUniformLocation(prog, 'u_image'), 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      const glErr = gl.getError();
+      document.getElementById('pipeline-status').innerHTML = `
+        <div class="ok">✓ Full pipeline executed</div>
+        <div>GL Error: ${glErr === gl.NO_ERROR ? 'None (OK)' : glErr}</div>
+        <div>Check the canvas above — it should show a tinted reddish image</div>
+      `;
+      document.getElementById('pipeline-status').className = 'status ok';
+    }
+
+    // Run initial tests
+    window.addEventListener('load', () => {
+      testWebGLSupport();
+      testCanvasRender();
+    });
+  </script>
+</body>
+</html>

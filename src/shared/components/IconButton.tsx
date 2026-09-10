@@ -19,6 +19,7 @@ interface IconButtonProps {
   loading?: boolean;
   ariaLabel?: string;
   title?: string;
+  pressed?: boolean;
   variant?: ComponentProps<typeof Button>['variant'];
 }
 
@@ -35,6 +36,7 @@ export const IconButton = memo(function IconButton({
   loading = false,
   ariaLabel,
   title,
+  pressed,
   variant = 'outline',
 }: IconButtonProps) {
   const content = children ?? Label;
@@ -47,6 +49,7 @@ export const IconButton = memo(function IconButton({
       onClick={onClick}
       disabled={disabled || loading}
       aria-label={ariaLabel}
+      aria-pressed={pressed}
       title={title}
     >
       {loading ? (

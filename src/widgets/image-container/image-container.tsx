@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, type DragEvent, type ChangeEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, type DragEvent, type ChangeEvent } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Image01Icon } from '@hugeicons/core-free-icons'
+import { Image01Icon } from '@hugeicons/core-free-icons';
 import {
   Empty,
   EmptyContent,
@@ -8,10 +8,10 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@/components/ui/empty"
+} from "@/components/ui/empty";
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Countdown, ProbeGrid } from '@/features/extraction';
+import { Countdown, ExtractionShaderOverlay, ProbeGrid, type GridStage } from '@/features/extraction';
 import { useExtractionStore } from '@/store/extractionStore';
 import { motion } from 'motion/react';
 
@@ -19,52 +19,49 @@ export default function ImageContainer() {
   const image = useExtractionStore((s) => s.image);
   const setImage = useExtractionStore((s) => s.setImage);
   const isHydrated = useExtractionStore((s) => s.isHydrated);
-  const phase = useExtractionStore((s) => s.phase); 
+  const phase = useExtractionStore((s) => s.phase);
+  const isShaderEnabled = useExtractionStore((s) => s.isShaderEnabled);
   const isImageExpanded = useExtractionStore((s) => s.isImageExpanded);
   const toggleImageExpanded = useExtractionStore((s) => s.toggleImageExpanded);
   const [isDragging, setIsDragging] = useState(false);
-  const [imageVersion, setImageVersion] = useState(0)
+  const [imageVersion, setImageVersion] = useState(0);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [gridStage, setGridStage] = useState<GridStage | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
-  // Redraw canvas when persisted image is restored
   useEffect(() => {
     if (!image) return;
 
     const img = imageRef.current;
     const canvas = canvasRef.current;
+    if (!img || !canvas || !img.complete || img.naturalWidth === 0) return;
 
-    if (!img || !canvas) return;
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
 
-    // If image is already loaded, draw immediately
-    if (img.complete && img.naturalWidth > 0) {
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      ctx.drawImage(img, 0, 0);
-      setImageVersion(v => v + 1);
-    }
+    ctx.drawImage(img, 0, 0);
+    setImageVersion((version) => version + 1);
   }, [image]);
 
-  // Measure the displayed container, not the native image dimensions
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    const updateSize = (width: number, height: number) => setContainerSize({ width, height });
     const rect = container.getBoundingClientRect();
-    setContainerSize({ width: rect.width, height: rect.height });
+    updateSize(rect.width, rect.height);
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        setContainerSize({ width, height });
+        updateSize(width, height);
       }
     });
 
@@ -72,49 +69,51 @@ export default function ImageContainer() {
     return () => observer.disconnect();
   }, []);
 
-  const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
+  useEffect(() => {
+    if (phase !== 'extracting') setGridStage(null);
+  }, [phase]);
+
+  const handleStageChange = useCallback((stage: GridStage) => {
+    setGridStage(stage);
+  }, []);
+
+  const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
     setIsDragging(true);
   };
 
-  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
     setIsDragging(false);
   };
 
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const files = e.dataTransfer.files;
-    if (files && files[0]) {
-      handleFile(files[0]);
-    }
-  };
-
-  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files[0]) {
-      handleFile(files[0]);
-    }
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   const handleFile = (file: File) => {
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setImage(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file.type.startsWith('image/')) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => setImage(event.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+
+    const file = event.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) handleFile(file);
   };
 
   const handleImageLoad = () => {
@@ -129,13 +128,7 @@ export default function ImageContainer() {
     if (!ctx) return;
 
     ctx.drawImage(img, 0, 0);
-
-    setImageVersion(v => v + 1);
-    setTimeout(() => setImageVersion(v => v + 1), 100);
-  };
-
-  const handleClick = () => {
-    fileInputRef.current?.click();
+    setImageVersion((version) => version + 1);
   };
 
   return (
@@ -145,8 +138,7 @@ export default function ImageContainer() {
         animate={phase === 'complete' && !isImageExpanded ? { y: 40, scale: 0.95 } : { y: 0, scale: 1 }}
         transition={{ duration: 0.6, ease: 'easeInOut' }}
         onClick={() => phase === 'complete' && toggleImageExpanded()}
-        className={`relative flex items-center justify-center w-[55svw] h-[60svh] bg-klein overflow-hidden transition-colors shadow-2xl ${isDragging ? 'ring-2 ring-primary ring-inset' : ''
-          }`}
+        className={`relative flex h-[60svh] w-[55svw] items-center justify-center overflow-hidden bg-klein shadow-2xl transition-colors ${isDragging ? 'ring-2 ring-inset ring-primary' : ''}`}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -162,44 +154,54 @@ export default function ImageContainer() {
 
         <canvas ref={canvasRef} className="hidden" />
 
-        {phase === 'countdown' && <Countdown />}
-
-        {(phase === 'extracting' || phase === 'clustering') && (
-          <ProbeGrid
-            canvasRef={canvasRef}
-            imageVersion={imageVersion}
-            containerWidth={containerSize.width}
-            containerHeight={containerSize.height}
-          />
-        )}
-
         {!isHydrated ? (
-          <Spinner className='text-white' />
+          <Spinner className="text-white" />
         ) : image ? (
-          <img
-            ref={imageRef}
-            src={image}
-            alt="Uploaded content"
-            onLoad={handleImageLoad}
-            className="w-full h-full object-cover"
-          />
+          <>
+            <img
+              ref={imageRef}
+              src={image}
+              alt="Uploaded content"
+              onLoad={handleImageLoad}
+              className="relative z-0 h-full w-full object-cover"
+            />
+            {phase === 'extracting' && isShaderEnabled && gridStage && (
+              <ExtractionShaderOverlay
+                imageRef={imageRef}
+                imageVersion={imageVersion}
+                stage={gridStage}
+                width={containerSize.width}
+                height={containerSize.height}
+              />
+            )}
+            {(phase === 'extracting' || phase === 'clustering') && (
+              <ProbeGrid
+                canvasRef={canvasRef}
+                imageVersion={imageVersion}
+                containerWidth={containerSize.width}
+                containerHeight={containerSize.height}
+                onStageChange={handleStageChange}
+              />
+            )}
+            {phase === 'countdown' && <Countdown />}
+          </>
         ) : (
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <HugeiconsIcon icon={Image01Icon} className='size-7' />
+                <HugeiconsIcon icon={Image01Icon} className="size-7" />
               </EmptyMedia>
-              <EmptyTitle className='text-white'>No image selected</EmptyTitle>
-              <EmptyDescription className='text-white'>Drag & drop an image here</EmptyDescription>
+              <EmptyTitle className="text-white">No image selected</EmptyTitle>
+              <EmptyDescription className="text-white">Drag & drop an image here</EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
-              <Button onClick={handleClick}>Browse files</Button>
+              <Button onClick={() => fileInputRef.current?.click()}>Browse files</Button>
             </EmptyContent>
           </Empty>
         )}
       </motion.div>
       {!isHydrated && (
-        <div className="flex items-center justify-center mt-4">
+        <div className="mt-4 flex items-center justify-center">
           <Spinner className="size-6 text-white" />
         </div>
       )}

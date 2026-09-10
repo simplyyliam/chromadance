@@ -1,18 +1,19 @@
 import { extractColor } from "@/lib/extractColor";
 import { Unit8ToRGB } from "@/lib/Unit8toRGB";
 import { useExtractionStore } from "@/store/extractionStore";
-import { motion, type Variants } from "motion/react";
+import { motion, useReducedMotion, type Variants } from "motion/react";
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { ExtractionProbe } from "./ExtractionProbe";
+
+export type GridStage = "entering" | "breathing" | "leaving";
 
 type ProbeGridProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   imageVersion?: number;
   containerWidth: number;
   containerHeight: number;
+  onStageChange?: (stage: GridStage) => void;
 };
-
-type GridStage = "entering" | "breathing" | "leaving";
 
 const PROBE_SIZE = 16;
 const TARGET_GAP = 4; // used only to decide how many cells fit; actual gap is computed to fill the container exactly
@@ -30,15 +31,19 @@ const EXIT_EASE: [number, number, number, number] = [0.4, 0, 1, 1];
 
 const itemVariants: Variants = {
   hidden: { opacity: 0, scale: 0.35 },
-  visible: ({ entryDelay }: { entryDelay: number }) => ({
+  visible: ({ entryDelay, reducedMotion }: { entryDelay: number; reducedMotion: boolean }) => ({
     opacity: 1,
     scale: 1,
-    transition: { delay: entryDelay, duration: ENTRY_DURATION, ease: ENTRY_EASE },
+    transition: reducedMotion
+      ? { duration: 0 }
+      : { delay: entryDelay, duration: ENTRY_DURATION, ease: ENTRY_EASE },
   }),
-  exit: ({ exitDelay }: { exitDelay: number }) => ({
+  exit: ({ exitDelay, reducedMotion }: { exitDelay: number; reducedMotion: boolean }) => ({
     opacity: 0,
-    scale: 0,
-    transition: { delay: exitDelay, duration: EXIT_DURATION, ease: EXIT_EASE },
+    scale: reducedMotion ? 1 : 0,
+    transition: reducedMotion
+      ? { duration: 0 }
+      : { delay: exitDelay, duration: EXIT_DURATION, ease: EXIT_EASE },
   }),
 };
 
@@ -46,15 +51,17 @@ export const ProbeGrid = ({
   canvasRef,
   containerWidth,
   containerHeight,
+  onStageChange,
 }: ProbeGridProps) => {
   const phase = useExtractionStore((s) => s.phase);
+  const areProbesVisible = useExtractionStore((s) => s.areProbesVisible);
   const setExtractedColors = useExtractionStore((s) => s.setExtractedColors);
   const setPhase = useExtractionStore((s) => s.setPhase);
+  const reducedMotion = useReducedMotion() ?? false;
 
   const [stage, setStage] = useState<GridStage>("entering");
   const [colors, setColors] = useState<Record<string, string>>({});
 
-  // Decide how many cells fit using the target gap, same as before...
   const gridCols = Math.max(
     1,
     Math.floor((containerWidth + TARGET_GAP) / (PROBE_SIZE + TARGET_GAP)),
@@ -64,8 +71,6 @@ export const ProbeGrid = ({
     Math.floor((containerHeight + TARGET_GAP) / (PROBE_SIZE + TARGET_GAP)),
   );
 
-  // ...but instead of leaving the leftover as an outer margin, distribute it
-  // into the gap between cells so the grid runs edge-to-edge.
   const gapX =
     gridCols > 1
       ? (containerWidth - gridCols * PROBE_SIZE) / (gridCols - 1)
@@ -102,6 +107,10 @@ export const ProbeGrid = ({
   const exitLength = Math.max(0, probes.length - 1) * EXIT_STEP + EXIT_DURATION;
 
   useEffect(() => {
+    onStageChange?.(stage);
+  }, [onStageChange, stage]);
+
+  useEffect(() => {
     if (phase !== "extracting" || containerWidth === 0 || containerHeight === 0) return;
 
     setStage("entering");
@@ -133,17 +142,15 @@ export const ProbeGrid = ({
         if (!imageData) return [];
 
         const rgb = Unit8ToRGB(imageData);
-        return [
-          {
-            id: probe.id,
-            x: probe.x,
-            y: probe.y,
-            width: PROBE_SIZE,
-            height: PROBE_SIZE,
-            rgb: { r: rgb.r, g: rgb.g, b: rgb.b },
-            color: rgb.color,
-          },
-        ];
+        return [{
+          id: probe.id,
+          x: probe.x,
+          y: probe.y,
+          width: PROBE_SIZE,
+          height: PROBE_SIZE,
+          rgb: { r: rgb.r, g: rgb.g, b: rgb.b },
+          color: rgb.color,
+        }];
       });
 
       setColors(Object.fromEntries(extracted.map(({ id, color }) => [id, color])));
@@ -160,8 +167,10 @@ export const ProbeGrid = ({
     return () => window.clearTimeout(exitTimeout);
   }, [exitLength, setPhase, stage]);
 
+  if (!areProbesVisible) return null;
+
   return (
-    <div className="absolute inset-0 pointer-events-none">
+    <div className="absolute inset-0 z-20 pointer-events-none">
       <style>{`
         @keyframes probe-breathe {
           0%, 100% { transform: scale(1); }
@@ -170,12 +179,15 @@ export const ProbeGrid = ({
         .probe-breathing {
           animation: probe-breathe ${BREATH_DURATION}s ease-in-out infinite;
         }
+        @media (prefers-reduced-motion: reduce) {
+          .probe-breathing { animation: none; }
+        }
       `}</style>
 
       {probes.map((probe) => {
         const entryDelay = (probe.col + probe.row) * ENTRY_STEP;
         const exitDelay = probe.rippleIndex * EXIT_STEP;
-      
+
         return (
           <motion.div
             key={probe.id}
@@ -188,7 +200,7 @@ export const ProbeGrid = ({
               willChange: "transform, opacity",
             }}
             variants={itemVariants}
-            custom={{ entryDelay, exitDelay }}
+            custom={{ entryDelay, exitDelay, reducedMotion }}
             initial="hidden"
             animate={stage === "leaving" ? "exit" : "visible"}
           >
