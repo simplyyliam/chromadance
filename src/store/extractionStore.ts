@@ -203,6 +203,8 @@ export const useExtractionStore = create<ExtractionStore>()(
       setPaletteGenerating: (generating) => set({ isPaletteGenerating: generating }),
 
       toggleImageExpanded: () => set((state) => ({ isImageExpanded: !state.isImageExpanded })),
+
+      setExiting: (exiting) => set({ isExiting: exiting }),
     }),
     {
       name: 'extraction-store',

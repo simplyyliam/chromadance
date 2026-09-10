@@ -1,7 +1,7 @@
 import { extractColor } from "@/lib/extractColor";
 import { Unit8ToRGB } from "@/lib/Unit8toRGB";
 import { useExtractionStore } from "@/store/extractionStore";
-import { motion } from "motion/react";
+import { motion, type Variants } from "motion/react";
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { ExtractionProbe } from "./ExtractionProbe";
 
@@ -15,12 +15,32 @@ type ProbeGridProps = {
 type GridStage = "entering" | "breathing" | "leaving";
 
 const PROBE_SIZE = 16;
-const GAP = 4;
+const TARGET_GAP = 4; // used only to decide how many cells fit; actual gap is computed to fill the container exactly
+
 const ENTRY_STEP = 0.006;
 const ENTRY_DURATION = 0.22;
-const BREATH_DURATION = 1.5;
+const ENTRY_EASE: [number, number, number, number] = [0.22, 0.8, 0.3, 1];
+
+const BREATH_DURATION = 1.5; // full CSS loop, seconds
+const BREATH_SCALE = 1.14;
+
 const EXIT_STEP = 0.035;
 const EXIT_DURATION = 0.18;
+const EXIT_EASE: [number, number, number, number] = [0.4, 0, 1, 1];
+
+const itemVariants: Variants = {
+  hidden: { opacity: 0, scale: 0.35 },
+  visible: ({ entryDelay }: { entryDelay: number }) => ({
+    opacity: 1,
+    scale: 1,
+    transition: { delay: entryDelay, duration: ENTRY_DURATION, ease: ENTRY_EASE },
+  }),
+  exit: ({ exitDelay }: { exitDelay: number }) => ({
+    opacity: 0,
+    scale: 0,
+    transition: { delay: exitDelay, duration: EXIT_DURATION, ease: EXIT_EASE },
+  }),
+};
 
 export const ProbeGrid = ({
   canvasRef,
@@ -34,104 +54,63 @@ export const ProbeGrid = ({
   const [stage, setStage] = useState<GridStage>("entering");
   const [colors, setColors] = useState<Record<string, string>>({});
 
+  // Decide how many cells fit using the target gap, same as before...
   const gridCols = Math.max(
     1,
-    Math.floor((containerWidth + GAP) / (PROBE_SIZE + GAP)),
+    Math.floor((containerWidth + TARGET_GAP) / (PROBE_SIZE + TARGET_GAP)),
   );
-
   const gridRows = Math.max(
     1,
-    Math.floor((containerHeight + GAP) / (PROBE_SIZE + GAP)),
+    Math.floor((containerHeight + TARGET_GAP) / (PROBE_SIZE + TARGET_GAP)),
   );
 
-  const gridWidth =
-    gridCols * PROBE_SIZE + (gridCols - 1) * GAP;
-
-  const gridHeight =
-    gridRows * PROBE_SIZE + (gridRows - 1) * GAP;
-
-  const offsetX = (containerWidth - gridWidth) / 2;
-  const offsetY = (containerHeight - gridHeight) / 2;
+  // ...but instead of leaving the leftover as an outer margin, distribute it
+  // into the gap between cells so the grid runs edge-to-edge.
+  const gapX =
+    gridCols > 1
+      ? (containerWidth - gridCols * PROBE_SIZE) / (gridCols - 1)
+      : 0;
+  const gapY =
+    gridRows > 1
+      ? (containerHeight - gridRows * PROBE_SIZE) / (gridRows - 1)
+      : 0;
 
   const probes = useMemo(() => {
     const centerX = (gridCols - 1) / 2;
     const centerY = (gridRows - 1) / 2;
 
-    const baseProbes = Array.from(
-      { length: gridCols * gridRows },
-      (_, index) => {
-        const col = index % gridCols;
-        const row = Math.floor(index / gridCols);
+    const baseProbes = Array.from({ length: gridCols * gridRows }, (_, index) => {
+      const col = index % gridCols;
+      const row = Math.floor(index / gridCols);
+      const x = col * (PROBE_SIZE + gapX);
+      const y = row * (PROBE_SIZE + gapY);
+      const centerDistance = Math.hypot(col - centerX, row - centerY);
 
-        const x = offsetX + col * (PROBE_SIZE + GAP);
-        const y = offsetY + row * (PROBE_SIZE + GAP);
-
-        const centerDistance = Math.hypot(
-          col - centerX,
-          row - centerY,
-        );
-
-        return {
-          id: `probe-${col}-${row}`,
-          col,
-          row,
-          x,
-          y,
-          centerDistance,
-        };
-      },
-    );
+      return { id: `probe-${col}-${row}`, col, row, x, y, centerDistance };
+    });
 
     return [...baseProbes]
       .sort((a, b) => {
-        if (a.centerDistance !== b.centerDistance) {
-          return a.centerDistance - b.centerDistance;
-        }
-
-        if (a.row !== b.row) {
-          return a.row - b.row;
-        }
-
+        if (a.centerDistance !== b.centerDistance) return a.centerDistance - b.centerDistance;
+        if (a.row !== b.row) return a.row - b.row;
         return a.col - b.col;
       })
-      .map((probe, rippleIndex) => ({
-        ...probe,
-        rippleIndex,
-      }));
-  }, [gridCols, gridRows, offsetX, offsetY]);
+      .map((probe, rippleIndex) => ({ ...probe, rippleIndex }));
+  }, [gridCols, gridRows, gapX, gapY]);
 
-  const entryLength =
-    (gridCols + gridRows - 2) * ENTRY_STEP + ENTRY_DURATION;
-
-  const exitLength =
-    Math.max(0, probes.length - 1) * EXIT_STEP + EXIT_DURATION;
+  const entryLength = (gridCols + gridRows - 2) * ENTRY_STEP + ENTRY_DURATION;
+  const exitLength = Math.max(0, probes.length - 1) * EXIT_STEP + EXIT_DURATION;
 
   useEffect(() => {
-    if (
-      phase !== "extracting" ||
-      containerWidth === 0 ||
-      containerHeight === 0
-    ) {
-      return;
-    }
+    if (phase !== "extracting" || containerWidth === 0 || containerHeight === 0) return;
 
     setStage("entering");
     setColors({});
     setExtractedColors([]);
 
-    const entryTimeout = window.setTimeout(
-      () => setStage("breathing"),
-      entryLength * 1000,
-    );
-
+    const entryTimeout = window.setTimeout(() => setStage("breathing"), entryLength * 1000);
     return () => window.clearTimeout(entryTimeout);
-  }, [
-    containerHeight,
-    containerWidth,
-    entryLength,
-    phase,
-    setExtractedColors,
-  ]);
+  }, [containerHeight, containerWidth, entryLength, phase, setExtractedColors]);
 
   useEffect(() => {
     if (stage !== "breathing" || phase !== "extracting") return;
@@ -142,11 +121,7 @@ export const ProbeGrid = ({
 
       const scaleX = canvas.width / containerWidth;
       const scaleY = canvas.height / containerHeight;
-
-      const sampleSize = Math.max(
-        1,
-        Math.round(PROBE_SIZE * Math.min(scaleX, scaleY)),
-      );
+      const sampleSize = Math.max(1, Math.round(PROBE_SIZE * Math.min(scaleX, scaleY)));
 
       const extracted = probes.flatMap((probe) => {
         const imageData = extractColor(
@@ -155,11 +130,9 @@ export const ProbeGrid = ({
           sampleSize,
           canvasRef,
         );
-
         if (!imageData) return [];
 
         const rgb = Unit8ToRGB(imageData);
-
         return [
           {
             id: probe.id,
@@ -167,116 +140,61 @@ export const ProbeGrid = ({
             y: probe.y,
             width: PROBE_SIZE,
             height: PROBE_SIZE,
-            rgb: {
-              r: rgb.r,
-              g: rgb.g,
-              b: rgb.b,
-            },
+            rgb: { r: rgb.r, g: rgb.g, b: rgb.b },
             color: rgb.color,
           },
         ];
       });
 
-      setColors(
-        Object.fromEntries(
-          extracted.map(({ id, color }) => [id, color]),
-        ),
-      );
-
-      setExtractedColors(
-        extracted.map(({ color: _color, ...color }) => color),
-      );
-
+      setColors(Object.fromEntries(extracted.map(({ id, color }) => [id, color])));
+      setExtractedColors(extracted.map(({ color: _color, ...color }) => color));
       setStage("leaving");
     }, BREATH_DURATION * 1000);
 
     return () => window.clearTimeout(extractionTimeout);
-  }, [
-    canvasRef,
-    containerHeight,
-    containerWidth,
-    phase,
-    probes,
-    setExtractedColors,
-    stage,
-  ]);
+  }, [canvasRef, containerHeight, containerWidth, phase, probes, setExtractedColors, stage]);
 
   useEffect(() => {
     if (stage !== "leaving") return;
-
-    const exitTimeout = window.setTimeout(
-      () => setPhase("clustering"),
-      exitLength * 1000,
-    );
-
+    const exitTimeout = window.setTimeout(() => setPhase("clustering"), exitLength * 1000);
     return () => window.clearTimeout(exitTimeout);
   }, [exitLength, setPhase, stage]);
 
   return (
     <div className="absolute inset-0 pointer-events-none">
+      <style>{`
+        @keyframes probe-breathe {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(${BREATH_SCALE}); }
+        }
+        .probe-breathing {
+          animation: probe-breathe ${BREATH_DURATION}s ease-in-out infinite;
+        }
+      `}</style>
+
       {probes.map((probe) => {
-        const entryDelay =
-          (probe.col + probe.row) * ENTRY_STEP;
-
-        const exitDelay =
-          probe.rippleIndex * EXIT_STEP;
-
-        const isBreathing = stage === "breathing";
-        const isLeaving = stage === "leaving";
-
-        const animationKey = `${probe.id}-${stage}`;
-
+        const entryDelay = (probe.col + probe.row) * ENTRY_STEP;
+        const exitDelay = probe.rippleIndex * EXIT_STEP;
+      
         return (
           <motion.div
-            key={animationKey}
-            className="absolute"
-            initial={
-              isLeaving
-                ? { opacity: 1, scale: 1 }
-                : { opacity: 0, scale: 0.35 }
-            }
-            animate={
-              isLeaving
-                ? { opacity: 0, scale: 0 }
-                : isBreathing
-                  ? {
-                      opacity: 1,
-                      scale: [1, 1.14, 1],
-                    }
-                  : {
-                      opacity: 1,
-                      scale: 1,
-                    }
-            }
-            transition={
-              isLeaving
-                ? {
-                    delay: exitDelay,
-                    duration: EXIT_DURATION,
-                    ease: [0.4, 0, 1, 1],
-                  }
-                : isBreathing
-                  ? {
-                      duration: 0.75,
-                      repeat: Infinity,
-                      repeatType: "mirror",
-                      ease: "easeInOut",
-                    }
-                  : {
-                      delay: entryDelay,
-                      duration: ENTRY_DURATION,
-                      ease: [0.22, 0.8, 0.3, 1],
-                    }
-            }
+            key={probe.id}
+            className="absolute flex items-center justify-center"
             style={{
               left: probe.x,
               top: probe.y,
+              width: PROBE_SIZE,
+              height: PROBE_SIZE,
+              willChange: "transform, opacity",
             }}
+            variants={itemVariants}
+            custom={{ entryDelay, exitDelay }}
+            initial="hidden"
+            animate={stage === "leaving" ? "exit" : "visible"}
           >
-            <ExtractionProbe
-              color={colors[probe.id]}
-              isLeaving={isLeaving}
-            />
+            <div className={stage === "breathing" ? "probe-breathing" : undefined}>
+              <ExtractionProbe color={colors[probe.id]} isLeaving={stage === "leaving"} />
+            </div>
           </motion.div>
         );
       })}

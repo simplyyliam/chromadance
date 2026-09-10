@@ -7,7 +7,7 @@ type ExtractionProbeProps = {
 
 export const ExtractionProbe = ({ color, isLeaving }: ExtractionProbeProps) => (
   <motion.div
-    className="h-1.5 w-1.5 "
+    className="h-1.5 w-1.5 rounded-full"
     style={{ backgroundColor: isLeaving ? "#ffffff" : color ?? "#ffffff" }}
   />
 );

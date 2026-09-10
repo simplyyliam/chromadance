@@ -19,7 +19,7 @@ export default function ImageContainer() {
   const image = useExtractionStore((s) => s.image);
   const setImage = useExtractionStore((s) => s.setImage);
   const isHydrated = useExtractionStore((s) => s.isHydrated);
-  const phase = useExtractionStore((s) => s.phase);
+  const phase = useExtractionStore((s) => s.phase); 
   const isImageExpanded = useExtractionStore((s) => s.isImageExpanded);
   const toggleImageExpanded = useExtractionStore((s) => s.toggleImageExpanded);
   const [isDragging, setIsDragging] = useState(false);
@@ -171,16 +171,6 @@ export default function ImageContainer() {
             containerWidth={containerSize.width}
             containerHeight={containerSize.height}
           />
-        )}
-
-        {phase === 'extracting' && (
-          <motion.div
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm uppercase tracking-widest"
-            animate={{ opacity: [0.3, 1, 0.3] }}
-            transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-          >
-            Extracting
-          </motion.div>
         )}
 
         {!isHydrated ? (
