@@ -140,6 +140,13 @@ export const SeedSelection = () => {
     [champion],
   );
 
+  // surfaceToken.hex -> the background color
+  const surfaceToken = useMemo(
+    () => (champion ? generateHctTokens(champion, "light").find(t => t.token === "surface") : undefined),
+    [champion],
+  );
+
+
   // Matches the WaveText timing: two lines, each with its own per-letter
   // stagger, so the outro doesn't start until both waves have fully arrived.
   const line1 = `${champion?.rgb.r ?? 0} ${champion?.rgb.g ?? 0} ${champion?.rgb.b ?? 0}`;
@@ -238,7 +245,28 @@ export const SeedSelection = () => {
   const currentBattle = phase === "dueling" ? battles[battleIndex] : undefined;
 
   return (
-    <div className="relative h-[60svh] w-[55svw] overflow-hidden bg-accent shadow-2xs">
+    <div className="relative h-[60svh] w-[55svw] overflow-hidden bg-accent shadow-2xs" style={{
+      backgroundColor: surfaceToken?.hex
+    }}>
+      {champion && revealStep === "palette" && (
+        <motion.div
+          className="absolute top-4 left-4 flex items-center gap-2 pointer-events-none"
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <span
+            className="h-2 w-2 rounded-full"
+            style={{ backgroundColor: darkenColor(champion) }}
+          />
+          <span
+            className="text-[10px] uppercase tracking-widest"
+            style={{ color: darkenColor(champion) }}
+          >
+            surface
+          </span>
+        </motion.div>
+      )}
       <div
         className="absolute inset-0 grid"
         style={{
@@ -402,31 +430,33 @@ export const SeedSelection = () => {
 
               {/* Row 3: HCT UI tokens — the actual resolved widget colors. */}
               <div className="grid grid-cols-4 grid-rows-2 gap-3">
-                {hctTokens.map((token, i) => (
-                  <motion.div
-                    key={token.id}
-                    className="flex flex-col items-center gap-2"
-                    initial={{ opacity: 0, y: 24, scale: 0.85 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{
-                      duration: 0.5,
-                      ease: [0.22, 1, 0.36, 1],
-                      delay:
-                        hslPalette.length * 0.09 +
-                        hctPalette.length * 0.09 +
-                        0.6 +
-                        i * 0.07,
-                    }}
-                  >
-                    <div className="h-16 w-16" style={{ backgroundColor: token.hex }} />
-                    <span
-                      className="text-[10px] uppercase tracking-widest"
-                      style={{ color: darkenColor({ rgb: token.rgb } as ExtractedColor) }}
+                {hctTokens
+                  .filter((token) => token.token !== "surface")
+                  .map((token, i) => (
+                    <motion.div
+                      key={token.id}
+                      className="flex flex-col items-center gap-2"
+                      initial={{ opacity: 0, y: 24, scale: 0.85 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{
+                        duration: 0.5,
+                        ease: [0.22, 1, 0.36, 1],
+                        delay:
+                          hslPalette.length * 0.09 +
+                          hctPalette.length * 0.09 +
+                          0.6 +
+                          i * 0.07,
+                      }}
                     >
-                      {token.token}
-                    </span>
-                  </motion.div>
-                ))}
+                      <div className="h-16 w-16" style={{ backgroundColor: token.hex }} />
+                      <span
+                        className="text-[10px] uppercase tracking-widest"
+                        style={{ color: darkenColor({ rgb: token.rgb } as ExtractedColor) }}
+                      >
+                        {token.token}
+                      </span>
+                    </motion.div>
+                  ))}
               </div>
             </>
           )}
