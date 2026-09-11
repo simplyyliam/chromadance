@@ -106,7 +106,7 @@ export type SeedBattle = {
 
 export const fight = (challenger: ExtractedColor, defender: ExtractedColor): SeedBattle => {
   const challengerScore = scoreContender(challenger)
-  const defendererScore = scoreContender(challenger)
+  const defendererScore = scoreContender(defender)
 
   const challengerWins =
     challengerScore.total > defendererScore.total ||

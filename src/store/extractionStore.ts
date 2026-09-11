@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { indexedDbStorage } from './indexedDbStorage';
 
 // Phase system for the extraction workflow
 export type ExtractionPhase =
@@ -225,17 +226,18 @@ export const useExtractionStore = create<ExtractionStore>()(
     }),
     {
       name: 'extraction-store',
-      storage: createJSONStorage(() => sessionStorage),
+      // storage: createJSONStorage(() => sessionStorage),
+      storage: createJSONStorage(() => indexedDbStorage),
       partialize: (state) => ({
         image: state.image,
         isShaderEnabled: state.isShaderEnabled,
       }),
-      onRehydrateStorage: () => {
-        return (state) => {
-          if (state) {
-            state.isHydrated = true;
-          }
-        };
+      onRehydrateStorage: () => (_state, error) => {
+        if (error) {
+          console.warn('Failed to rehydrate extraction store:', error);
+          return;
+        }
+        useExtractionStore.setState({ isHydrated: true });
       },
     }
   )
