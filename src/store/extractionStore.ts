@@ -48,6 +48,7 @@ export type ExtractionStore = {
   extractedColors: ExtractedColor[];
   clusters: ColorCluster[];
   palette: string[];          // Final generated palette
+  champion: ExtractedColor | null;
 
   // Animation states
   isCountingDown: boolean;
@@ -62,7 +63,7 @@ export type ExtractionStore = {
   setImage: (image: string | null) => void;
   setPhase: (phase: ExtractionPhase) => void;
   reset: () => void;
-
+  setChampion: (color: ExtractedColor | null) => void;
   // Actions - Countdown
   startCountdown: (duration?: number) => void;
   decrementCountdown: () => void;
@@ -114,6 +115,7 @@ export const useExtractionStore = create<ExtractionStore>()(
       extractedColors: [],
       clusters: [],
       palette: [],
+      champion: null,
 
       // Animation states
       isCountingDown: false,
@@ -128,6 +130,7 @@ export const useExtractionStore = create<ExtractionStore>()(
       setImage: (image) => set({ image, phase: image ? 'idle' : 'idle' }),
 
       setPhase: (phase) => set({ phase }),
+      setChampion: (color) => set({ champion: color }),
 
       reset: () => set({
         image: null,
@@ -137,6 +140,7 @@ export const useExtractionStore = create<ExtractionStore>()(
         containerDimensionsAtExtraction: undefined,
         clusters: [],
         palette: [],
+        champion: null,
         isExtracting: false,
         isContending: false,
         isPaletteGenerating: false,

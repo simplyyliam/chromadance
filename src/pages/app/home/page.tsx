@@ -27,15 +27,15 @@ export default function Home() {
         animate={
           shouldCollapse
             ? {
-                scale: 0.95,
-                opacity: 0,
-                filter: 'blur(8px)',
-              }
+              scale: 0.95,
+              opacity: 0,
+              filter: 'blur(8px)',
+            }
             : {
-                scale: 1,
-                opacity: 1,
-                filter: 'blur(0px)',
-              }
+              scale: 1,
+              opacity: 1,
+              filter: 'blur(0px)',
+            }
         }
         transition={{ duration: 0.45, ease: 'easeInOut' }}
         style={{
@@ -49,15 +49,15 @@ export default function Home() {
         animate={
           !shouldCollapse
             ? {
-                scale: 0.95,
-                opacity: 0,
-                filter: 'blur(8px)',
-              }
+              scale: 0.95,
+              opacity: 0,
+              filter: 'blur(8px)',
+            }
             : {
-                scale: 1,
-                opacity: 1,
-                filter: 'blur(0px)',
-              }
+              scale: 1,
+              opacity: 1,
+              filter: 'blur(0px)',
+            }
         }
         transition={{ duration: 0.45, ease: 'easeInOut' }}
         style={{
@@ -65,7 +65,7 @@ export default function Home() {
         }}
         className="absolute inset-0 flex items-center justify-center"
       >
-        {phase === 'contenders' && <SeedSelection/> }
+        {phase === 'contenders' && <SeedSelection />}
       </motion.div>
     </div>
   )

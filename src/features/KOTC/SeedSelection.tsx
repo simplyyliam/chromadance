@@ -2,9 +2,11 @@ import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useExtractionStore, type ExtractedColor } from "@/store/extractionStore";
 import { fight, scoreContender, type SeedBattle } from "./lib/SeedRule";
+import { darkenColor, rgbString } from "@/lib/colorUtils";
+import { WaveText } from "@/shared";
 
 /** How many colors survive the cull to fight one-on-one. Battles = LIMIT - 1,  so this is the dial that controls total runtime. 64 -> 63 duels. */
-const CONTENDER_LIMIT = 64;
+const CONTENDER_LIMIT = 1;
 
 /** Beat where the untouched pixelated image just sits there to be admired. */
 const APPRECIATION_MS = 1800;
@@ -20,11 +22,10 @@ const RESOLVE_MS = 480;
 /** How far the two contenders expand while facing off. */
 const FACE_OFF_SCALE = 2.4;
 
+
 type Phase = "admiring" | "culling" | "dueling" | "crowned";
 type Step = "facing" | "resolving";
 
-const rgbString = (color: ExtractedColor) =>
-  `rgb(${color.rgb.r}, ${color.rgb.g}, ${color.rgb.b})`;
 
 // Variants rather than inline keyframes, so a re-render can't retrigger a pop.
 const cellVariants = {
@@ -40,6 +41,7 @@ const cellVariants = {
 
 export const SeedSelection = () => {
   const extractedColors = useExtractionStore((s) => s.extractedColors);
+  const setChampion = useExtractionStore((s) => s.setChampion);
 
   const [phase, setPhase] = useState<Phase>("admiring");
   const [battleIndex, setBattleIndex] = useState(0);
@@ -166,10 +168,18 @@ export const SeedSelection = () => {
     return () => window.clearTimeout(timer);
   }, [phase, battleIndex, step, battles]);
 
+  // wherever `champion` currently gets computed/set...
+  useEffect(() => {
+    if (phase === "crowned") {
+      const winner = battles[battles.length - 1]?.winner ?? qualifiers[0] ?? null;
+      setChampion(winner);
+    }
+  }, [phase, battles, qualifiers, setChampion]);
+
   const currentBattle = phase === "dueling" ? battles[battleIndex] : undefined;
 
   return (
-    <div className="relative h-[60svh] w-[55svw] overflow-hidden ">
+    <div className="relative h-[60svh] w-[55svw] overflow-hidden bg-accent shadow-2xs">
       <div
         className="absolute inset-0 grid"
         style={{
@@ -188,6 +198,7 @@ export const SeedSelection = () => {
           const isDefender = currentBattle?.defender.id === color.id;
           const isFighting = isChallenger || isDefender;
           const isLoser = currentBattle?.loser.id === color.id;
+
 
           let state: keyof typeof cellVariants = "alive";
           if (deadIds.has(color.id)) {
@@ -227,9 +238,11 @@ export const SeedSelection = () => {
                 gridColumn: spot?.col,
                 gridRow: spot?.row,
                 backgroundColor: rgbString(color),
-                // Keep the duelling pair above their neighbours while swollen.
                 zIndex: isFighting ? 10 : 1,
+                outline: isFighting ? `3px solid ${darkenColor(color)}` : "none",
+                outlineOffset: isFighting ? "-3px" : "0",
               }}
+
             />
           );
         })}
@@ -244,6 +257,25 @@ export const SeedSelection = () => {
           style={{ backgroundColor: rgbString(champion) }}
         />
       )}
+      {champion && (
+        <motion.div
+          key={champion.id}
+          className="absolute bottom-0 flex flex-col p-5"
+          style={{ color: darkenColor(champion) }}
+        >
+          <WaveText
+            text={`${champion.rgb.r} ${champion.rgb.g} ${champion.rgb.b}`}
+            className="text-8xl font-semibold"
+            delay={0.1}
+          />
+          <WaveText
+            text="Is The Seed"
+            className="text-8xl font-semibold"
+            delay={0.1 + `${champion.rgb.r} ${champion.rgb.g} ${champion.rgb.b}`.length * 0.025 + 0.15}
+          />
+        </motion.div>
+      )}
+
     </div>
   );
 };
