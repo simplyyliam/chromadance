@@ -1,9 +1,10 @@
 import { motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useExtractionStore, type ExtractedColor } from "@/store/extractionStore";
 import { fight, scoreContender, type SeedBattle } from "./lib/SeedRule";
 import { darkenColor, rgbString } from "@/lib/colorUtils";
 import { WaveText } from "@/shared";
+import { generateHslPalette, generateHctPalette, generateHctTokens } from "./lib/palette";
 
 /** How many colors survive the cull to fight one-on-one. Battles = LIMIT - 1,  so this is the dial that controls total runtime. 64 -> 63 duels. */
 const CONTENDER_LIMIT = 1;
@@ -22,10 +23,15 @@ const RESOLVE_MS = 480;
 /** How far the two contenders expand while facing off. */
 const FACE_OFF_SCALE = 2.4;
 
+/** How long the finished reveal (background + text) sits before reversing. */
+const CHAMPION_HOLD_MS = 1000;
+
+/** How long the champion background takes to fade/shrink away. */
+const BG_OUT_MS = 500;
 
 type Phase = "admiring" | "culling" | "dueling" | "crowned";
 type Step = "facing" | "resolving";
-
+type RevealStep = "hold" | "textOut" | "bgOut" | "palette";
 
 // Variants rather than inline keyframes, so a re-render can't retrigger a pop.
 const cellVariants = {
@@ -119,6 +125,60 @@ export const SeedSelection = () => {
       ? battles[battles.length - 1]?.winner ?? qualifiers[0] ?? null
       : null;
 
+  const hslPalette = useMemo(
+    () => (champion ? generateHslPalette(champion) : []),
+    [champion],
+  );
+
+  const hctPalette = useMemo(
+    () => (champion ? generateHctPalette(champion) : []),
+    [champion],
+  );
+
+  const hctTokens = useMemo(
+    () => (champion ? generateHctTokens(champion, "light") : []),
+    [champion],
+  );
+
+  // Matches the WaveText timing: two lines, each with its own per-letter
+  // stagger, so the outro doesn't start until both waves have fully arrived.
+  const line1 = `${champion?.rgb.r ?? 0} ${champion?.rgb.g ?? 0} ${champion?.rgb.b ?? 0}`;
+  const line1Duration = 0.1 + line1.length * 0.025 + 0.5;
+  const line2Delay = line1Duration + 0.15;
+  const line2Duration = line2Delay + "Is The Seed".length * 0.025 + 0.5;
+
+  const [revealStep, setRevealStep] = useState<RevealStep>("hold");
+
+  // Counts how many of the two WaveText lines have finished their outro, so
+  // we only advance once BOTH have actually left — not on a guessed timer.
+  const outroCompleteRef = useRef(0);
+
+  const handleTextOutroComplete = useCallback(() => {
+    outroCompleteRef.current += 1;
+    if (outroCompleteRef.current >= 2) {
+      setRevealStep("bgOut");
+    }
+  }, []);
+
+  // Reset the whole reveal sequence whenever a new champion is crowned.
+  useEffect(() => {
+    setRevealStep("hold");
+    outroCompleteRef.current = 0;
+  }, [champion]);
+
+  // hold -> textOut: once both wave-in lines have fully arrived, sit for a
+  // beat, then reverse them. (Entrance timing is a known formula, so this one
+  // stays timer-based; the outro's completion above uses the real callback.)
+  useEffect(() => {
+    if (!champion || revealStep !== "hold") return;
+
+    const timer = window.setTimeout(
+      () => setRevealStep("textOut"),
+      line2Duration * 1000 + CHAMPION_HOLD_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [champion, revealStep, line2Duration]);
+
   // Reset for a new set of colors.
   useEffect(() => {
     setPhase("admiring");
@@ -168,7 +228,6 @@ export const SeedSelection = () => {
     return () => window.clearTimeout(timer);
   }, [phase, battleIndex, step, battles]);
 
-  // wherever `champion` currently gets computed/set...
   useEffect(() => {
     if (phase === "crowned") {
       const winner = battles[battles.length - 1]?.winner ?? qualifiers[0] ?? null;
@@ -199,7 +258,6 @@ export const SeedSelection = () => {
           const isFighting = isChallenger || isDefender;
           const isLoser = currentBattle?.loser.id === color.id;
 
-
           let state: keyof typeof cellVariants = "alive";
           if (deadIds.has(color.id)) {
             state = "gone";
@@ -212,7 +270,6 @@ export const SeedSelection = () => {
 
           let transition: Record<string, unknown> = { duration: 0 };
           if (state === "gone" && isCulled) {
-            // Staggered dissolve, weakest first.
             transition = { duration: 0.35, delay: (rank * CULL_STEP_MS) / 1000 };
           } else if (state === "facing") {
             transition = { duration: FACE_OFF_MS / 1000, ease: "easeOut" };
@@ -223,7 +280,6 @@ export const SeedSelection = () => {
               ease: "easeInOut",
             };
           } else if (isFighting) {
-            // The winner easing back into its own cell.
             transition = { duration: RESOLVE_MS / 1000, ease: "easeInOut" };
           }
 
@@ -242,7 +298,6 @@ export const SeedSelection = () => {
                 outline: isFighting ? `3px solid ${darkenColor(color)}` : "none",
                 outlineOffset: isFighting ? "-3px" : "0",
               }}
-
             />
           );
         })}
@@ -253,29 +308,130 @@ export const SeedSelection = () => {
           key={champion.id}
           layoutId={champion.id}
           className="absolute inset-0"
-          transition={{ duration: 0.6, ease: "easeInOut" }}
+          animate={
+            revealStep === "bgOut" || revealStep === "palette"
+              ? { opacity: 0, scale: 0.92 }
+              : { opacity: 1, scale: 1 }
+          }
+          transition={{ duration: BG_OUT_MS / 1000, ease: "easeInOut" }}
+          onAnimationComplete={() => {
+            // Only advance from the fade-out we triggered, never the initial
+            // shared-layout pop-in from the winning cell.
+            if (revealStep === "bgOut") setRevealStep("palette");
+          }}
           style={{ backgroundColor: rgbString(champion) }}
         />
       )}
-      {champion && (
+
+      {champion && revealStep !== "bgOut" && revealStep !== "palette" && (
         <motion.div
-          key={champion.id}
+          key={`${champion.id}-text`}
           className="absolute bottom-0 flex flex-col p-5"
           style={{ color: darkenColor(champion) }}
         >
           <WaveText
-            text={`${champion.rgb.r} ${champion.rgb.g} ${champion.rgb.b}`}
+            text={line1}
             className="text-8xl font-semibold"
             delay={0.1}
+            show={revealStep === "hold"}
+            onAnimationComplete={handleTextOutroComplete}
           />
           <WaveText
             text="Is The Seed"
             className="text-8xl font-semibold"
-            delay={0.1 + `${champion.rgb.r} ${champion.rgb.g} ${champion.rgb.b}`.length * 0.025 + 0.15}
+            delay={line2Delay}
+            show={revealStep === "hold"}
+            onAnimationComplete={handleTextOutroComplete}
           />
         </motion.div>
       )}
 
+      {champion && (
+        <motion.div className="absolute inset-0 flex flex-col items-center justify-center gap-8 pointer-events-none">
+          {revealStep === "palette" && (
+            <>
+              {/* Row 1: HSL approximation — one hue, 5 lightness stops. */}
+              <div className="flex items-center justify-center gap-3">
+                {hslPalette.map((tone, i) => (
+                  <motion.div
+                    key={tone.id}
+                    className="flex flex-col items-center gap-2"
+                    initial={{ opacity: 0, y: 24, scale: 0.85 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{
+                      duration: 0.5,
+                      ease: [0.22, 1, 0.36, 1],
+                      delay: i * 0.09,
+                    }}
+                  >
+                    <div className="h-24 w-24" style={{ backgroundColor: tone.hex }} />
+                    <span
+                      className="text-xs uppercase tracking-widest"
+                      style={{ color: darkenColor({ rgb: tone.rgb } as ExtractedColor) }}
+                    >
+                      {tone.name}
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Row 2: HCT roles — correct hue/chroma, shown at seed's tone. */}
+              <div className="flex items-center justify-center gap-3">
+                {hctPalette.map((tone, i) => (
+                  <motion.div
+                    key={tone.id}
+                    className="flex flex-col items-center gap-2"
+                    initial={{ opacity: 0, y: 24, scale: 0.85 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{
+                      duration: 0.5,
+                      ease: [0.22, 1, 0.36, 1],
+                      delay: hslPalette.length * 0.09 + 0.3 + i * 0.09,
+                    }}
+                  >
+                    <div className="h-24 w-24" style={{ backgroundColor: tone.hex }} />
+                    <span
+                      className="text-xs uppercase tracking-widest"
+                      style={{ color: darkenColor({ rgb: tone.rgb } as ExtractedColor) }}
+                    >
+                      {tone.name}
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Row 3: HCT UI tokens — the actual resolved widget colors. */}
+              <div className="grid grid-cols-4 grid-rows-2 gap-3">
+                {hctTokens.map((token, i) => (
+                  <motion.div
+                    key={token.id}
+                    className="flex flex-col items-center gap-2"
+                    initial={{ opacity: 0, y: 24, scale: 0.85 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{
+                      duration: 0.5,
+                      ease: [0.22, 1, 0.36, 1],
+                      delay:
+                        hslPalette.length * 0.09 +
+                        hctPalette.length * 0.09 +
+                        0.6 +
+                        i * 0.07,
+                    }}
+                  >
+                    <div className="h-16 w-16" style={{ backgroundColor: token.hex }} />
+                    <span
+                      className="text-[10px] uppercase tracking-widest"
+                      style={{ color: darkenColor({ rgb: token.rgb } as ExtractedColor) }}
+                    >
+                      {token.token}
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+            </>
+          )}
+        </motion.div>
+      )}
     </div>
   );
 };
