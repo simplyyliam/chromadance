@@ -24,13 +24,18 @@ type ProbeGridProps = {
   containerHeight: number;
 };
 
-/* ----------------------------------------------------------------- geometry */
+/* geometry */
 
-const PROBE_SIZE = 16;
+// Fixed sample resolution — this is the single source of truth for how many
+// probes exist. It no longer depends on screen size, so the same image
+// produces the same seed on any display.
+const GRID_COLS = 48;
+const GRID_ROWS = 32;
 const TARGET_GAP = 4;
+
 const DOT_RADIUS = 3;
 
-/* ------------------------------------------------------------------- motion */
+/* motion */
 
 /** Fraction of the stage spent staggering by distance from centre. The rest is
  *  each probe's own ramp, so the wave reads as a ripple rather than a cascade. */
@@ -77,49 +82,50 @@ export const ProbeGrid = ({
   const sampledStringsRef = useRef<string[] | null>(null);
   const sampledAtRef = useRef(0);
 
-  /* ------------------------------------------------------------ probe layout */
+  /* probe layout */
 
-  const { probes, gridCols, gridRows } = useMemo(() => {
-    const cols = Math.max(
-      1,
-      Math.floor((containerWidth + TARGET_GAP) / (PROBE_SIZE + TARGET_GAP)),
-    );
-    const rows = Math.max(
-      1,
-      Math.floor((containerHeight + TARGET_GAP) / (PROBE_SIZE + TARGET_GAP)),
-    );
-
+  const { probes, gridCols, gridRows, probeSizeX, probeSizeY } = useMemo(() => {
+    const cols = GRID_COLS;
+    const rows = GRID_ROWS;
+  
+    // Derive probe size FROM the container (instead of deriving column/row
+    // count from a fixed probe size), so the number of samples stays constant
+    // across any screen — only each probe's rendered size changes.
+    const probeSizeX = Math.max(1, (containerWidth - (cols - 1) * TARGET_GAP) / cols);
+    const probeSizeY = Math.max(1, (containerHeight - (rows - 1) * TARGET_GAP) / rows);
+  
     // Distribute the leftover space into the gaps so the grid runs edge to edge.
-    const gapX = cols > 1 ? (containerWidth - cols * PROBE_SIZE) / (cols - 1) : 0;
-    const gapY = rows > 1 ? (containerHeight - rows * PROBE_SIZE) / (rows - 1) : 0;
-
+    const gapX = cols > 1 ? (containerWidth - cols * probeSizeX) / (cols - 1) : 0;
+    const gapY = rows > 1 ? (containerHeight - rows * probeSizeY) / (rows - 1) : 0;
+  
     const centerCol = (cols - 1) / 2;
     const centerRow = (rows - 1) / 2;
     const maxDistance = Math.max(1e-6, Math.hypot(centerCol, centerRow));
-
+  
     const list = Array.from({ length: cols * rows }, (_, index) => {
       const col = index % cols;
       const row = Math.floor(index / cols);
-      const x = col * (PROBE_SIZE + gapX);
-      const y = row * (PROBE_SIZE + gapY);
-
+      const x = col * (probeSizeX + gapX);
+      const y = row * (probeSizeY + gapY);
+  
       return {
         index,
         col,
         row,
         x,
         y,
-        cx: x + PROBE_SIZE / 2,
-        cy: y + PROBE_SIZE / 2,
-        /** 0 at the centre, 1 at the furthest probe. Drives every stagger. */
+        cx: x + probeSizeX / 2,
+        cy: y + probeSizeY / 2,
         nd: Math.hypot(col - centerCol, row - centerRow) / maxDistance,
       };
     });
-
-    return { probes: list, gridCols: cols, gridRows: rows };
+  
+    return { probes: list, gridCols: cols, gridRows: rows, probeSizeX, probeSizeY };
   }, [containerWidth, containerHeight]);
 
-  /* -------------------------------------------------------------- canvas size */
+
+
+  /* canvas size */
 
   useEffect(() => {
     const canvas = layerRef.current;
@@ -135,7 +141,7 @@ export const ProbeGrid = ({
     ctxRef.current = ctx;
   }, [containerWidth, containerHeight]);
 
-  /* ------------------------------------------------------------- colour sample */
+  /* colour sample */
 
   // One downscale + one getImageData for the whole grid, at the moment the
   // breathing stage begins. Fast enough that it no longer stalls a frame.
@@ -148,9 +154,7 @@ export const ProbeGrid = ({
     const sampled = sampleGridColors(
       source,
       gridCols,
-      gridRows,
-      containerWidth,
-      containerHeight,
+      gridRows
     );
     if (!sampled) return;
 
@@ -164,8 +168,8 @@ export const ProbeGrid = ({
         id: `probe-${probe.col}-${probe.row}`,
         x: probe.x,
         y: probe.y,
-        width: PROBE_SIZE,
-        height: PROBE_SIZE,
+        width: probeSizeX,
+        height: probeSizeY,
         rgb: { r: c.r, g: c.g, b: c.b },
       };
     });
@@ -194,7 +198,7 @@ export const ProbeGrid = ({
     sampledAtRef.current = 0;
   }, [stage]);
 
-  /* -------------------------------------------------------------- render loop */
+  /* render loop */
 
   useEffect(() => {
     if (!stage || containerWidth <= 0 || containerHeight <= 0) return;
