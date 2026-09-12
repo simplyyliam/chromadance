@@ -26,14 +26,18 @@ type ProbeGridProps = {
 
 /* geometry */
 
-// Fixed sample resolution — this is the single source of truth for how many
-// probes exist. It no longer depends on screen size, so the same image
-// produces the same seed on any display.
-const GRID_COLS = 48;
-const GRID_ROWS = 32;
+// How many source-image pixels each probe represents, per axis. Lower =
+// denser/finer grid, tied to the actual photo's resolution rather than an
+// arbitrary fixed number or the display's viewport.
+const PIXELS_PER_PROBE = 40;
+
+// Bounds so a tiny or huge source image still produces a sane grid.
+const MIN_GRID_DIM = 12;
+const MAX_GRID_DIM = 140;
+
 const TARGET_GAP = 4;
 
-const DOT_RADIUS = 3;
+const DOT_RADIUS = 1.5;
 
 /* motion */
 
@@ -85,16 +89,25 @@ export const ProbeGrid = ({
   /* probe layout */
 
   const { probes, gridCols, gridRows, probeSizeX, probeSizeY } = useMemo(() => {
-    const cols = GRID_COLS;
-    const rows = GRID_ROWS;
+    const source = canvasRef.current;
   
-    // Derive probe size FROM the container (instead of deriving column/row
-    // count from a fixed probe size), so the number of samples stays constant
-    // across any screen — only each probe's rendered size changes.
+    // Grid resolution is a function of the image's own pixel dimensions, not
+    // the display. Same photo -> same grid -> same seed, on any screen.
+    const sourceWidth = source?.width || containerWidth;
+    const sourceHeight = source?.height || containerHeight;
+  
+    const cols = Math.min(
+      MAX_GRID_DIM,
+      Math.max(MIN_GRID_DIM, Math.round(sourceWidth / PIXELS_PER_PROBE)),
+    );
+    const rows = Math.min(
+      MAX_GRID_DIM,
+      Math.max(MIN_GRID_DIM, Math.round(sourceHeight / PIXELS_PER_PROBE)),
+    );
+  
     const probeSizeX = Math.max(1, (containerWidth - (cols - 1) * TARGET_GAP) / cols);
     const probeSizeY = Math.max(1, (containerHeight - (rows - 1) * TARGET_GAP) / rows);
   
-    // Distribute the leftover space into the gaps so the grid runs edge to edge.
     const gapX = cols > 1 ? (containerWidth - cols * probeSizeX) / (cols - 1) : 0;
     const gapY = rows > 1 ? (containerHeight - rows * probeSizeY) / (rows - 1) : 0;
   
@@ -121,7 +134,8 @@ export const ProbeGrid = ({
     });
   
     return { probes: list, gridCols: cols, gridRows: rows, probeSizeX, probeSizeY };
-  }, [containerWidth, containerHeight]);
+  }, [containerWidth, containerHeight, canvasRef, imageVersion]);
+
 
 
 
