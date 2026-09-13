@@ -1,7 +1,14 @@
+import * as React from "react";
 import { motion, type Variants } from "motion/react";
 
 type WaveTextProps = {
-  text: string;
+  /** Plain text to animate letter-by-letter. Ignored if `children` is set. */
+  text?: string;
+  /** JSX to animate letter-by-letter. Any string found anywhere in the tree
+   *  is split into per-letter motion.spans; actual elements (e.g. a nested
+   *  <input>) are cloned as-is, un-split, with their own children walked
+   *  the same way — so refs/handlers/hidden inputs stay fully functional. */
+  children?: React.ReactNode;
   className?: string;
   stagger?: number;
   delay?: number;
@@ -26,8 +33,50 @@ const letter: Variants = {
   },
 };
 
+/**
+ * Recursively walks a ReactNode tree: every string becomes an array of
+ * individual `motion.span` letters (so the container's staggerChildren
+ * animates them one by one, same as plain text), while any real element is
+ * cloned unchanged except that ITS children are walked the same way. Motion's
+ * stagger/variant propagation works through plain DOM nesting (a <label> in
+ * between, for example), so letters buried inside an element still animate
+ * in sequence with the rest.
+ */
+const splitNode = (node: React.ReactNode, keyPrefix: string): React.ReactNode => {
+  if (typeof node === "string") {
+    return node.split("").map((char, i) => (
+      <motion.span
+        key={`${keyPrefix}-${i}`}
+        variants={letter}
+        style={{ display: "inline-block", whiteSpace: char === " " ? "pre" : "normal" }}
+      >
+        {char}
+      </motion.span>
+    ));
+  }
+
+  if (Array.isArray(node)) {
+    return node.map((child, i) => splitNode(child, `${keyPrefix}-${i}`));
+  }
+
+  if (React.isValidElement(node)) {
+    const children = (node.props as { children?: React.ReactNode }).children;
+    // No children (e.g. a self-closing <input/>) — nothing to split, and
+    // nothing to clone: return the exact original element, ref untouched.
+    if (children === undefined) return node;
+
+    return React.cloneElement(node, {
+      children: splitNode(children, `${keyPrefix}-c`),
+    } as React.Attributes);
+  }
+
+  // number, boolean, null, undefined — nothing to animate.
+  return node;
+};
+
 export const WaveText = ({
   text,
+  children,
   className,
   stagger = 0.025,
   delay = 0,
@@ -46,19 +95,9 @@ export const WaveText = ({
       staggerDirection: show ? 1 : -1,
     }}
     onAnimationComplete={() => {
-      // Only report completion of the outro, never the entrance — the parent
-      // only cares about "the text has fully left."
       if (!show) onAnimationComplete?.();
     }}
   >
-    {text.split("").map((char, i) => (
-      <motion.span
-        key={i}
-        variants={letter}
-        style={{ display: "inline-block", whiteSpace: char === " " ? "pre" : "normal" }}
-      >
-        {char}
-      </motion.span>
-    ))}
+    {splitNode(children ?? text ?? "", "root")}
   </motion.span>
 );
