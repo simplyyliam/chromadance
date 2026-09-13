@@ -4,7 +4,8 @@ import { useExtractionStore, type ExtractedColor } from "@/store/extractionStore
 import { fight, scoreContender, type SeedBattle } from "./lib/SeedRule";
 import { darkenColor, rgbString } from "@/lib/colorUtils";
 import { WaveText } from "@/shared";
-import { generateHslPalette, generateHctPalette, generateHctTokens } from "./lib/palette";
+import { generateHctTokens } from "./lib/palette";
+import { PaletteBentoGrid } from "./PaletteBentoGrid";
 
 /** How many colors survive the cull to fight one-on-one. Battles = LIMIT - 1,  so this is the dial that controls total runtime. 64 -> 63 duels. */
 const CONTENDER_LIMIT = 1;
@@ -125,15 +126,6 @@ export const SeedSelection = () => {
       ? battles[battles.length - 1]?.winner ?? qualifiers[0] ?? null
       : null;
 
-  const hslPalette = useMemo(
-    () => (champion ? generateHslPalette(champion) : []),
-    [champion],
-  );
-
-  const hctPalette = useMemo(
-    () => (champion ? generateHctPalette(champion) : []),
-    [champion],
-  );
 
   const hctTokens = useMemo(
     () => (champion ? generateHctTokens(champion, "light") : []),
@@ -141,10 +133,10 @@ export const SeedSelection = () => {
   );
 
   // surfaceToken.hex -> the background color
-  const surfaceToken = useMemo(
-    () => (champion ? generateHctTokens(champion, "light").find(t => t.token === "surface") : undefined),
-    [champion],
-  );
+  // const surfaceToken = useMemo(
+  //   () => (champion ? generateHctTokens(champion, "light").find(t => t.token === "surface") : undefined),
+  //   [champion],
+  // );
 
 
   // Matches the WaveText timing: two lines, each with its own per-letter
@@ -245,28 +237,7 @@ export const SeedSelection = () => {
   const currentBattle = phase === "dueling" ? battles[battleIndex] : undefined;
 
   return (
-    <div className="relative h-[60svh] w-[55svw] overflow-hidden bg-accent shadow-2xs" style={{
-      backgroundColor: surfaceToken?.hex
-    }}>
-      {champion && revealStep === "palette" && (
-        <motion.div
-          className="absolute top-4 left-4 flex items-center gap-2 pointer-events-none"
-          initial={{ opacity: 0, x: -8 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <span
-            className="h-2 w-2 rounded-full"
-            style={{ backgroundColor: darkenColor(champion) }}
-          />
-          <span
-            className="text-[10px] uppercase tracking-widest"
-            style={{ color: darkenColor(champion) }}
-          >
-            surface
-          </span>
-        </motion.div>
-      )}
+    <div className="relative  h-[60svh] w-[55svw] overflow-hidden bg-[#0A0A0A] shadow-2xs rounded-xl" >
       <div
         className="absolute inset-0 grid"
         style={{
@@ -378,86 +349,17 @@ export const SeedSelection = () => {
         <motion.div className="absolute inset-0 flex flex-col items-center justify-center gap-8 pointer-events-none">
           {revealStep === "palette" && (
             <>
-              {/* Row 1: HSL approximation — one hue, 5 lightness stops. */}
-              <div className="flex items-center justify-center gap-3">
-                {hslPalette.map((tone, i) => (
-                  <motion.div
-                    key={tone.id}
-                    className="flex flex-col items-center gap-2"
-                    initial={{ opacity: 0, y: 24, scale: 0.85 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{
-                      duration: 0.5,
-                      ease: [0.22, 1, 0.36, 1],
-                      delay: i * 0.09,
-                    }}
-                  >
-                    <div className="h-24 w-24" style={{ backgroundColor: tone.hex }} />
-                    <span
-                      className="text-xs uppercase tracking-widest"
-                      style={{ color: darkenColor({ rgb: tone.rgb } as ExtractedColor) }}
-                    >
-                      {tone.name}
-                    </span>
-                  </motion.div>
-                ))}
-              </div>
+              {champion && (
+                <motion.div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  {revealStep === "palette" && (
+                    <PaletteBentoGrid
+                      tokens={hctTokens}
+                      description="Generated from your seed color's HCT hue and chroma, mapped across primary, secondary, tertiary, and neutral roles."
+                    />
+                  )}
+                </motion.div>
+              )}
 
-              {/* Row 2: HCT roles — correct hue/chroma, shown at seed's tone. */}
-              <div className="flex items-center justify-center gap-3">
-                {hctPalette.map((tone, i) => (
-                  <motion.div
-                    key={tone.id}
-                    className="flex flex-col items-center gap-2"
-                    initial={{ opacity: 0, y: 24, scale: 0.85 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{
-                      duration: 0.5,
-                      ease: [0.22, 1, 0.36, 1],
-                      delay: hslPalette.length * 0.09 + 0.3 + i * 0.09,
-                    }}
-                  >
-                    <div className="h-24 w-24" style={{ backgroundColor: tone.hex }} />
-                    <span
-                      className="text-xs uppercase tracking-widest"
-                      style={{ color: darkenColor({ rgb: tone.rgb } as ExtractedColor) }}
-                    >
-                      {tone.name}
-                    </span>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* Row 3: HCT UI tokens — the actual resolved widget colors. */}
-              <div className="grid grid-cols-4 grid-rows-2 gap-3">
-                {hctTokens
-                  .filter((token) => token.token !== "surface")
-                  .map((token, i) => (
-                    <motion.div
-                      key={token.id}
-                      className="flex flex-col items-center gap-2"
-                      initial={{ opacity: 0, y: 24, scale: 0.85 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{
-                        duration: 0.5,
-                        ease: [0.22, 1, 0.36, 1],
-                        delay:
-                          hslPalette.length * 0.09 +
-                          hctPalette.length * 0.09 +
-                          0.6 +
-                          i * 0.07,
-                      }}
-                    >
-                      <div className="h-16 w-16" style={{ backgroundColor: token.hex }} />
-                      <span
-                        className="text-[10px] uppercase tracking-widest"
-                        style={{ color: darkenColor({ rgb: token.rgb } as ExtractedColor) }}
-                      >
-                        {token.token}
-                      </span>
-                    </motion.div>
-                  ))}
-              </div>
             </>
           )}
         </motion.div>

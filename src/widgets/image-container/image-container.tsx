@@ -199,7 +199,7 @@ export default function ImageContainer({ shouldCollapse }: ImageContainerProps) 
         onClick={() => {
           if (phase === 'contenders') toggleImageExpanded();
         }}
-        className={`relative z-40 flex h-[60svh] w-[55svw] items-center justify-center overflow-hidden bg-klein shadow-2xl transition-colors ${isDragging ? 'ring-2 ring-inset ring-primary' : ''}`}
+        className={`relative z-40 flex h-[60svh] w-[55svw] items-center justify-center overflow-hidden bg-klein shadow-2xl rounded-xl transition-colors ${isDragging ? 'ring-2 ring-inset ring-primary' : ''}`}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}

@@ -145,9 +145,9 @@ export type UiToken = {
 };
 
 export const UI_TOKENS: UiToken[] = [
-  { token: "surface", description: "Canvas", role: "Neutral 1", lightTone: 98, darkTone: 6 },
   { token: "primary-container", description: "Main Button", role: "Accent 1", lightTone: 90, darkTone: 30 },
   { token: "on-primary-container", description: "Button Text/Icon", role: "Accent 1", lightTone: 10, darkTone: 90 },
+  { token: "surface", description: "Canvas", role: "Neutral 1", lightTone: 98, darkTone: 6 },
   { token: "secondary-container", description: "Path/Pills", role: "Accent 2", lightTone: 90, darkTone: 30 },
   { token: "on-secondary-container", description: "Pill Text", role: "Accent 2", lightTone: 10, darkTone: 90 },
   { token: "tertiary-container", description: "Accent Badges", role: "Accent 3", lightTone: 90, darkTone: 30 },
