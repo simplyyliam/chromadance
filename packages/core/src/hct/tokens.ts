@@ -1,29 +1,26 @@
-import { Hct, argbFromRgb, redFromArgb, greenFromArgb, blueFromArgb } from "@material/material-color-utilities";
-import type { ExtractedColor } from "@/store/extractionStore";
+import {
+  Hct,
+  argbFromRgb,
+  redFromArgb,
+  greenFromArgb,
+  blueFromArgb,
+} from "@material/material-color-utilities";
+import type { PaletteColor, RGB, ThemeMode } from "../types";
+import { rgbToHex, hslToRgb, rgbToHsl } from "../color/utils";
 
-export type PaletteColor = {
-  id: string;
-  name: string;
-  rgb: { r: number; g: number; b: number };
-  hex: string;
-};
+/** Minimal seed shape needed to generate a palette: an id and an rgb color. */
+export type Seed = { id: string; rgb: RGB };
 
-const toHex = (v: number) => v.toString(16).padStart(2, "0");
-
-const toPaletteColor = (
-  id: string,
-  name: string,
-  rgb: { r: number; g: number; b: number },
-): PaletteColor => ({
+const toPaletteColor = (id: string, name: string, rgb: RGB): PaletteColor => ({
   id,
   name,
   rgb,
-  hex: `#${toHex(rgb.r)}${toHex(rgb.g)}${toHex(rgb.b)}`,
+  hex: rgbToHex(rgb),
 });
 
 /* ============================================================================
  *  HSL PALETTE (original approximation) — single hue, 5 lightness/saturation
- *  stops. Kept as-is for comparison against the HCT rows below.
+ *  stops. Kept for comparison against the HCT rows below.
  * ==========================================================================*/
 
 export type PaletteTone = {
@@ -40,75 +37,24 @@ export const PALETTE_TONES: PaletteTone[] = [
   { name: "Darkest", lightnessShift: -0.3, saturationShift: -0.14 },
 ];
 
-type HSL = { h: number; s: number; l: number };
-
-const rgbToHsl = (r: number, g: number, b: number): HSL => {
-  const rn = r / 255;
-  const gn = g / 255;
-  const bn = b / 255;
-
-  const max = Math.max(rn, gn, bn);
-  const min = Math.min(rn, gn, bn);
-  const l = (max + min) / 2;
-
-  let h = 0;
-  let s = 0;
-
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-
-    if (max === rn) h = ((gn - bn) / d + (gn < bn ? 6 : 0)) / 6;
-    else if (max === gn) h = ((bn - rn) / d + 2) / 6;
-    else h = ((rn - gn) / d + 4) / 6;
-  }
-
-  return { h, s, l };
-};
-
-const hslToRgb = ({ h, s, l }: HSL): { r: number; g: number; b: number } => {
-  if (s === 0) {
-    const v = Math.round(l * 255);
-    return { r: v, g: v, b: v };
-  }
-
-  const hueToRgb = (p: number, q: number, t: number) => {
-    let tt = t;
-    if (tt < 0) tt += 1;
-    if (tt > 1) tt -= 1;
-    if (tt < 1 / 6) return p + (q - p) * 6 * tt;
-    if (tt < 1 / 2) return q;
-    if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
-    return p;
-  };
-
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-
-  return {
-    r: Math.round(hueToRgb(p, q, h + 1 / 3) * 255),
-    g: Math.round(hueToRgb(p, q, h) * 255),
-    b: Math.round(hueToRgb(p, q, h - 1 / 3) * 255),
-  };
-};
-
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-
-const applyTone = (base: HSL, tone: PaletteTone): HSL => ({
-  h: base.h,
-  s: clamp01(base.s + tone.saturationShift),
-  l: clamp01(base.l + tone.lightnessShift),
-});
 
 /** Original approximation: 5 tones of the seed's own hue, in HSL space. */
 export const generateHslPalette = (
-  seed: ExtractedColor,
+  seed: Seed,
   tones: PaletteTone[] = PALETTE_TONES,
 ): PaletteColor[] => {
-  const baseHsl = rgbToHsl(seed.rgb.r, seed.rgb.g, seed.rgb.b);
+  const baseHsl = rgbToHsl(seed.rgb);
 
   return tones.map((tone) => {
-    const rgb = tone.name === "Seed" ? seed.rgb : hslToRgb(applyTone(baseHsl, tone));
+    const rgb =
+      tone.name === "Seed"
+        ? seed.rgb
+        : hslToRgb({
+            h: baseHsl.h,
+            s: clamp01(baseHsl.s + tone.saturationShift),
+            l: clamp01(baseHsl.l + tone.lightnessShift),
+          });
     return toPaletteColor(`${seed.id}-hsl-${tone.name.toLowerCase()}`, tone.name, rgb);
   });
 };
@@ -126,20 +72,21 @@ export type HctRole = {
   chroma: (seedChroma: number) => number;
 };
 
-// Phase 1: Key Palette Generation (HCT Parameters)
+/** Phase 1: Key Palette Generation (HCT parameters). */
 export const HCT_ROLES: HctRole[] = [
   { name: "Accent 1", hueOffset: 0, chroma: (Cs) => Math.max(Cs, 48) },
   { name: "Accent 2", hueOffset: 0, chroma: (Cs) => Math.max(Cs * 0.33, 16) },
   { name: "Accent 3", hueOffset: 60, chroma: (Cs) => Math.max(Cs * 0.5, 24) },
-  { name: "Neutral 1", hueOffset: 0, chroma: () => 5 }, // 4-6 range, midpoint
-  { name: "Neutral 2", hueOffset: 0, chroma: () => 10 }, // 8-12 range, midpoint
+  { name: "Neutral 1", hueOffset: 0, chroma: () => 5 },
+  { name: "Neutral 2", hueOffset: 0, chroma: () => 10 },
 ];
 
 /** Phase 2: which role + which Tone each UI token pulls, split by mode. */
 export type UiToken = {
   token: string;
   description: string;
-  role: string; // must match an HctRole.name
+  /** Must match an `HctRole.name`. */
+  role: string;
   lightTone: number;
   darkTone: number;
 };
@@ -155,7 +102,7 @@ export const UI_TOKENS: UiToken[] = [
   { token: "outline-variant", description: "Grid lines/Dividers", role: "Neutral 2", lightTone: 80, darkTone: 30 },
 ];
 
-const argbToRgb = (argb: number) => ({
+const argbToRgb = (argb: number): RGB => ({
   r: redFromArgb(argb),
   g: greenFromArgb(argb),
   b: blueFromArgb(argb),
@@ -167,19 +114,19 @@ export type UiTokenColor = PaletteColor & {
   tone: number;
 };
 
-/** Resolves every Phase 2 UI token to an actual RGB color for one seed,
- *  in the given mode. Each role's Hue/Chroma is derived once (Phase 1),
- *  then every token pulls its own Tone from that role (Phase 2). */
+/**
+ * Resolves every Phase 2 UI token to an actual RGB color for one seed, in the
+ * given mode. Each role's Hue/Chroma is derived once (Phase 1), then every
+ * token pulls its own Tone from that role (Phase 2).
+ */
 export const generateHctTokens = (
-  seed: ExtractedColor,
-  mode: "light" | "dark",
+  seed: Seed,
+  mode: ThemeMode,
   roles: HctRole[] = HCT_ROLES,
   tokens: UiToken[] = UI_TOKENS,
 ): UiTokenColor[] => {
   const seedHct = Hct.fromInt(argbFromRgb(seed.rgb.r, seed.rgb.g, seed.rgb.b));
 
-  // Phase 1: one Hue/Chroma pair per role, computed once and reused by
-  // every token that references that role.
   const roleHueChroma = new Map(
     roles.map((role) => [
       role.name,
@@ -208,11 +155,12 @@ export const generateHctTokens = (
   });
 };
 
-/** The 5 raw HCT roles, each shown at the seed's own Tone — a simple
- *  "5 swatches" view for comparison against the HSL row, separate from
- *  the fully-resolved UI tokens above. */
+/**
+ * The 5 raw HCT roles, each shown at the seed's own Tone — a simple
+ * "5 swatches" view for comparison against the HSL row.
+ */
 export const generateHctPalette = (
-  seed: ExtractedColor,
+  seed: Seed,
   roles: HctRole[] = HCT_ROLES,
 ): PaletteColor[] => {
   const seedHct = Hct.fromInt(argbFromRgb(seed.rgb.r, seed.rgb.g, seed.rgb.b));
@@ -228,4 +176,19 @@ export const generateHctPalette = (
       rgb,
     );
   });
+};
+
+/**
+ * Flattens resolved UI tokens into a `{ "--token": "#hex" }` map, ready to be
+ * written onto an element's style as CSS custom properties.
+ */
+export const tokensToCssVariables = (
+  tokens: UiTokenColor[],
+  prefix = "--chromadance",
+): Record<string, string> => {
+  const vars: Record<string, string> = {};
+  for (const token of tokens) {
+    vars[`${prefix}-${token.token}`] = token.hex;
+  }
+  return vars;
 };

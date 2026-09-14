@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { indexedDbStorage } from './indexedDbStorage';
+import type { ExtractedColor } from '@chromadance/core';
+
+// Re-export so existing feature code can keep importing it from the store.
+export type { ExtractedColor };
 
 // Phase system for the extraction workflow
 export type ExtractionPhase =
@@ -10,17 +14,6 @@ export type ExtractionPhase =
   | 'contenders'     // KOTC: All colors enter the arena
   | 'palette'        // Generating final palette
   | 'complete';      // Palette ready
-
-export type ExtractedColor = {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rgb: { r: number; g: number; b: number };
-  clusterId?: string;
-  isKing?: boolean;       // Won its cluster (KOTC)
-};
 
 export type ColorCluster = {
   id: string;
