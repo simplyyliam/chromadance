@@ -14,6 +14,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Dev: resolve the workspace packages straight from source so editing
+      // them hot-reloads here with no rebuild. Consumers of the published
+      // packages still use the built dist/ output.
+      "@chromadance/core": path.resolve(__dirname, "../../packages/core/src/index.ts"),
+      "@chromadance/react": path.resolve(__dirname, "../../packages/react/src/index.ts"),
     },
   },
 })
